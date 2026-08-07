@@ -641,6 +641,20 @@ footer a:hover {
     text-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
 }
 
+.tag-cloud-toggle {
+    display: inline-block;
+    margin-left: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-decoration: none;
+}
+
+.tag-cloud-toggle:hover,
+.tag-cloud-toggle:focus {
+    color: var(--md-link);
+    text-decoration: underline;
+}
+
 /* vis-network hover tooltip - theme-aware */
 .vis-tooltip {
     position: absolute;
