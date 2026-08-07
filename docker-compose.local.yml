@@ -78,7 +78,7 @@ services:
 
   # Memorizer application
   memorizer:
-    image: memorizer:latest
+    image: petabridge/memorizer:latest
     restart: unless-stopped
     container_name: memorizer-dev
     environment:
