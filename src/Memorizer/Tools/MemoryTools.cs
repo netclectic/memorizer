@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Text;
 using ModelContextProtocol.Server;
 using Memory = Memorizer.Models.Memory;
-using System.Linq;
 using System.Diagnostics;
 using Memorizer.Models;
 using Memorizer.Models.Enums;
@@ -10,7 +9,6 @@ using Memorizer.Models.ValueTypes;
 using Memorizer.Services;
 using Memorizer.Settings;
 using Memorizer.Telemetry;
-using Microsoft.Extensions.Logging;
 
 namespace PostgMem.Tools;
 

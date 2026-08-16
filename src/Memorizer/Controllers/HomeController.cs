@@ -1,5 +1,4 @@
 using Memorizer.Models;
-using Memorizer.Models.Enums;
 using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.AspNetCore.Mvc;

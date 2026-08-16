@@ -1,4 +1,3 @@
-using System.Text.Json;
 using FluentAssertions;
 using Memorizer.Extensions;
 using Memorizer.Models;
@@ -9,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using System.Text.Json;
 
 namespace Memorizer.IntegrationTests;
 
@@ -30,20 +30,20 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
         _fixture = fixture;
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // Clean up provider_settings table before each test
         await using var dataSource = NpgsqlDataSource.Create(_fixture.PostgresConnectionString);
-        await using var conn = await dataSource.OpenConnectionAsync();
+        await using var conn = await dataSource.OpenConnectionAsync(cancellationToken: TestContext.Current.CancellationToken);
         await using var cmd = new NpgsqlCommand("DELETE FROM provider_settings", conn);
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_host != null)
         {
-            await _host.StopAsync();
+            await _host.StopAsync(cancellationToken: TestContext.Current.CancellationToken);
             _host.Dispose();
         }
     }
@@ -83,7 +83,7 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
         var customModel = "custom-embedding-model";
 
         await using var dataSource = NpgsqlDataSource.Create(_fixture.PostgresConnectionString);
-        await using var conn = await dataSource.OpenConnectionAsync();
+        await using var conn = await dataSource.OpenConnectionAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var insertSql = @"
             INSERT INTO provider_settings (id, provider_type, provider_name, display_name, config, is_active, created_at, updated_at)
@@ -99,14 +99,14 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             apiUrl = customApiUrl,
             model = customModel
         }));
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Start the host (InitializationService will load database settings)
         _host = CreateHost(new Dictionary<string, string?>());
-        await _host.StartAsync();
+        await _host.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Give InitializationService time to complete
-        await Task.Delay(2000);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
 
         // Assert - Check that configuration was updated from database
         var config = _host.Services.GetRequiredService<IConfiguration>();
@@ -128,7 +128,7 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
         var customModel = "custom-llm-model";
 
         await using var dataSource = NpgsqlDataSource.Create(_fixture.PostgresConnectionString);
-        await using var conn = await dataSource.OpenConnectionAsync();
+        await using var conn = await dataSource.OpenConnectionAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var insertSql = @"
             INSERT INTO provider_settings (id, provider_type, provider_name, display_name, config, is_active, created_at, updated_at)
@@ -145,14 +145,14 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             model = customModel,
             timeout = "00:05:00"
         }));
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Start the host (InitializationService will load database settings)
         _host = CreateHost(new Dictionary<string, string?>());
-        await _host.StartAsync();
+        await _host.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Give InitializationService time to complete
-        await Task.Delay(2000);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
 
         // Assert - Check that configuration was updated from database
         var config = _host.Services.GetRequiredService<IConfiguration>();
@@ -179,14 +179,14 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             ["Embeddings:ApiUrl"] = envApiUrl,
             ["Embeddings:Model"] = envModel,
         });
-        await _host.StartAsync();
+        await _host.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Give InitializationService time to complete
-        await Task.Delay(2000);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
 
         // Assert - Check that provider settings were seeded to database
         var storage = _host.Services.GetRequiredService<IStorage>();
-        var embeddingProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding);
+        var embeddingProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding, TestContext.Current.CancellationToken);
 
         embeddingProvider.Should().NotBeNull();
         var config = embeddingProvider!.Config.RootElement;
@@ -206,8 +206,8 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             ["Embeddings:ApiUrl"] = initialApiUrl,
             ["Embeddings:Model"] = initialModel,
         });
-        await _host.StartAsync();
-        await Task.Delay(2000);
+        await _host.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
 
         // Verify initial settings were loaded
         var config = _host.Services.GetRequiredService<IConfiguration>();
@@ -215,7 +215,7 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
 
         // Act - Update provider settings in database (simulating UI change)
         var storage = _host.Services.GetRequiredService<IStorage>();
-        var existingProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding);
+        var existingProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding, TestContext.Current.CancellationToken);
         existingProvider.Should().NotBeNull();
 
         var updatedModel = "nomic-embed-text";
@@ -234,7 +234,7 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             CreatedAt = existingProvider.CreatedAt,
             UpdatedAt = DateTime.UtcNow
         };
-        await storage.SaveProviderSettingsAsync(updatedProvider);
+        await storage.SaveProviderSettingsAsync(updatedProvider, TestContext.Current.CancellationToken);
 
         // Update configuration manually (in real app, this would be done via an event or controller)
         config["Embeddings:Model"] = updatedModel;
@@ -253,7 +253,7 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
         var defaultModel = "all-minilm";
 
         await using var dataSource = NpgsqlDataSource.Create(_fixture.PostgresConnectionString);
-        await using var conn = await dataSource.OpenConnectionAsync();
+        await using var conn = await dataSource.OpenConnectionAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var insertSql = @"
             INSERT INTO provider_settings (id, provider_type, provider_name, display_name, config, is_active, created_at, updated_at)
@@ -269,7 +269,7 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             apiUrl = localhostApiUrl,
             model = defaultModel
         }));
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Environment has non-localhost config (real production server)
         var productionApiUrl = _fixture.OllamaApiUrl; // This is not localhost
@@ -281,12 +281,12 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             ["Embeddings:ApiUrl"] = productionApiUrl,
             ["Embeddings:Model"] = productionModel,
         });
-        await _host.StartAsync();
-        await Task.Delay(2000);
+        await _host.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
 
         // Assert - Database should be updated with environment values (beta1 fix)
         var storage = _host.Services.GetRequiredService<IStorage>();
-        var embeddingProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding);
+        var embeddingProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding, TestContext.Current.CancellationToken);
 
         embeddingProvider.Should().NotBeNull();
         var config = embeddingProvider!.Config.RootElement;
@@ -312,13 +312,13 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             ["Embeddings:ApiUrl"] = apiUrl,
             ["Embeddings:Model"] = initialModel,
         });
-        await _host.StartAsync();
-        await Task.Delay(2000);
+        await _host.StartAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
 
         var storage = _host.Services.GetRequiredService<IStorage>();
 
         // Verify initial model was set
-        var initialProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding);
+        var initialProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding, TestContext.Current.CancellationToken);
         initialProvider.Should().NotBeNull();
         var initialConfig = initialProvider!.Config.RootElement;
         initialConfig.GetProperty("model").GetString().Should().Be(initialModel);
@@ -340,10 +340,10 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             CreatedAt = initialProvider.CreatedAt,
             UpdatedAt = DateTime.UtcNow
         };
-        await storage.SaveProviderSettingsAsync(updatedProvider);
+        await storage.SaveProviderSettingsAsync(updatedProvider, TestContext.Current.CancellationToken);
 
         // Assert - The model should be detected as changed in the database
-        var finalProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding);
+        var finalProvider = await storage.GetActiveProviderAsync(ProviderTypes.Embedding, TestContext.Current.CancellationToken);
         finalProvider.Should().NotBeNull();
         var finalConfig = finalProvider!.Config.RootElement;
         finalConfig.GetProperty("model").GetString().Should().Be(newModel);

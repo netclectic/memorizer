@@ -1,6 +1,3 @@
-using System.Text.Json.Serialization;
-using Memorizer.Models.ValueTypes;
-
 namespace Memorizer.Models;
 
 /// <summary>

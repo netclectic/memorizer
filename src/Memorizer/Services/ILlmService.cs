@@ -1,5 +1,3 @@
-using Memorizer.Models;
-
 namespace Memorizer.Services;
 
 /// <summary>

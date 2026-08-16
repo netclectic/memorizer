@@ -1,6 +1,4 @@
 using System.Threading.Channels;
-using Akka.Streams;
-using Memorizer.Models;
 
 namespace Memorizer.Actors;
 

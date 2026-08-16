@@ -2,7 +2,6 @@ using Memorizer.Models;
 using Memorizer.Settings;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using Registrator.Net;
 
 namespace Memorizer.Services;
 

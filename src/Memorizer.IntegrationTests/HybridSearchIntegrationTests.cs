@@ -5,7 +5,6 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -76,13 +75,13 @@ public class HybridSearchIntegrationTests : IDisposable
         {
             created.Add((await storage.StoreMemory(
                 "reference", "Notes about race conditions in concurrent code and mutex handling", "test",
-                new[] { "concurrency" }, new Confidence(1.0), "Race condition deep dive")).Id);
+                new[] { "concurrency" }, new Confidence(1.0), "Race condition deep dive", cancellationToken: TestContext.Current.CancellationToken)).Id);
             created.Add((await storage.StoreMemory(
                 "reference", "Understanding dependency injection containers and service lifetimes", "test",
-                new[] { "di" }, new Confidence(1.0), "Dependency injection")).Id);
+                new[] { "di" }, new Confidence(1.0), "Dependency injection", cancellationToken: TestContext.Current.CancellationToken)).Id);
 
             // Act - hybrid search should surface exact keyword matches via the FTS leg
-            var hybridResults = await storage.HybridSearch("race condition", limit: 5, minSimilarity: null, filterTags: null);
+            var hybridResults = await storage.HybridSearch("race condition", limit: 5, minSimilarity: null, filterTags: null, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
             Assert.NotEmpty(hybridResults);
@@ -91,7 +90,7 @@ public class HybridSearchIntegrationTests : IDisposable
         finally
         {
             foreach (var id in created)
-                await storage.Delete(id);
+                await storage.Delete(id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -106,11 +105,11 @@ public class HybridSearchIntegrationTests : IDisposable
         {
             created.Add((await storage.StoreMemory(
                 "reference", "Notes about race conditions in concurrent code and mutex handling", "test",
-                new[] { "concurrency" }, new Confidence(1.0), "Race condition deep dive")).Id);
+                new[] { "concurrency" }, new Confidence(1.0), "Race condition deep dive", cancellationToken: TestContext.Current.CancellationToken)).Id);
 
             // Act - method=vector mode must still work (metadata embedding search)
             var vectorResults = await storage.SearchWithMetadataEmbedding(
-                "race condition", limit: 5, new SimilarityScore(0.3), filterTags: null);
+                "race condition", limit: 5, new SimilarityScore(0.3), filterTags: null, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert - a lenient threshold should still surface the result
             Assert.Contains(vectorResults, m => m.Title?.Contains("Race condition") == true);
@@ -118,7 +117,7 @@ public class HybridSearchIntegrationTests : IDisposable
         finally
         {
             foreach (var id in created)
-                await storage.Delete(id);
+                await storage.Delete(id, TestContext.Current.CancellationToken);
         }
     }
 }

@@ -1,6 +1,5 @@
 using Memorizer.Models;
 using Memorizer.Models.Enums;
-using Memorizer.Models.ValueTypes;
 using Npgsql;
 using Registrator.Net;
 

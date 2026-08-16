@@ -4,10 +4,8 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PostgMem.Tools;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -78,12 +76,12 @@ public class WorkspaceSlugLookupTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
         var tools = CreateTools();
 
-        var created = await storage.CreateWorkspaceAsync("Engineering", "Root workspace", cancellationToken: default);
+        var created = await storage.CreateWorkspaceAsync("Engineering", "Root workspace", cancellationToken: TestContext.Current.CancellationToken);
         _output.WriteLine($"Created workspace {created.Id.Value} with slug '{created.Slug}'");
 
         try
         {
-            var result = await tools.GetWorkspace(slug: created.Slug);
+            var result = await tools.GetWorkspace(slug: created.Slug, cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Contains("Workspace: Engineering", result);
             Assert.Contains($"Slug: {created.Slug}", result);
@@ -91,7 +89,7 @@ public class WorkspaceSlugLookupTests : IDisposable
         }
         finally
         {
-            await storage.DeleteWorkspaceAsync(created.Id, default);
+            await storage.DeleteWorkspaceAsync(created.Id, cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -101,20 +99,20 @@ public class WorkspaceSlugLookupTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
         var tools = CreateTools();
 
-        var created = await storage.CreateWorkspaceAsync("Platform Team", cancellationToken: default);
+        var created = await storage.CreateWorkspaceAsync("Platform Team", cancellationToken: TestContext.Current.CancellationToken);
         _output.WriteLine($"Created workspace with slug '{created.Slug}'");
 
         try
         {
             // Caller passes an upper-cased slug; tool normalizes to the stored lowercase form.
-            var result = await tools.GetWorkspace(slug: created.Slug.ToUpperInvariant());
+            var result = await tools.GetWorkspace(slug: created.Slug.ToUpperInvariant(), cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Contains("Workspace: Platform Team", result);
             Assert.Contains($"Slug: {created.Slug}", result);
         }
         finally
         {
-            await storage.DeleteWorkspaceAsync(created.Id, default);
+            await storage.DeleteWorkspaceAsync(created.Id, cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -125,17 +123,17 @@ public class WorkspaceSlugLookupTests : IDisposable
         var tools = CreateTools();
 
         // Same slug at root and nested under a parent — parentWorkspaceId disambiguates.
-        var parent = await storage.CreateWorkspaceAsync("Platform", cancellationToken: default);
-        var rootDupe = await storage.CreateWorkspaceAsync("Backend", "root scope", cancellationToken: default);
-        var childDupe = await storage.CreateWorkspaceAsync("Backend", "child scope", parentId: parent.Id, cancellationToken: default);
+        var parent = await storage.CreateWorkspaceAsync("Platform", cancellationToken: TestContext.Current.CancellationToken);
+        var rootDupe = await storage.CreateWorkspaceAsync("Backend", "root scope", cancellationToken: TestContext.Current.CancellationToken);
+        var childDupe = await storage.CreateWorkspaceAsync("Backend", "child scope", parentId: parent.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(rootDupe.Slug, childDupe.Slug);
         _output.WriteLine($"Root '{rootDupe.Id.Value}' and child '{childDupe.Id.Value}' share slug '{rootDupe.Slug}'");
 
         try
         {
-            var rootResult = await tools.GetWorkspace(slug: rootDupe.Slug);
-            var childResult = await tools.GetWorkspace(slug: childDupe.Slug, parentWorkspaceId: parent.Id.Value.ToString());
+            var rootResult = await tools.GetWorkspace(slug: rootDupe.Slug, cancellationToken: TestContext.Current.CancellationToken);
+            var childResult = await tools.GetWorkspace(slug: childDupe.Slug, parentWorkspaceId: parent.Id.Value.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Contains(rootDupe.Id.Value.ToString(), rootResult);
             Assert.DoesNotContain(childDupe.Id.Value.ToString(), rootResult);
@@ -145,9 +143,9 @@ public class WorkspaceSlugLookupTests : IDisposable
         }
         finally
         {
-            await storage.DeleteWorkspaceAsync(childDupe.Id, default);
-            await storage.DeleteWorkspaceAsync(rootDupe.Id, default);
-            await storage.DeleteWorkspaceAsync(parent.Id, default);
+            await storage.DeleteWorkspaceAsync(childDupe.Id, cancellationToken: TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(rootDupe.Id, cancellationToken: TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(parent.Id, cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -156,7 +154,7 @@ public class WorkspaceSlugLookupTests : IDisposable
     {
         var tools = CreateTools();
 
-        var result = await tools.GetWorkspace(slug: "definitely-does-not-exist");
+        var result = await tools.GetWorkspace(slug: "definitely-does-not-exist", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains("Workspace with slug 'definitely-does-not-exist' not found among root workspaces.", result);
     }

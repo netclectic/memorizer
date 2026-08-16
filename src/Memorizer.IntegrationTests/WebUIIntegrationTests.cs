@@ -5,7 +5,6 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -46,7 +45,7 @@ public class WebUIIntegrationTests : IDisposable
                 ["Embeddings:Timeout"] = TimeSpan.FromMinutes(1).ToString()
             })
             .Build();
-        
+
         services.AddSingleton<IConfiguration>(config);
 
         // Add HTTP client for embedding service
@@ -84,19 +83,20 @@ public class WebUIIntegrationTests : IDisposable
             "test",
             new[] { "web-ui", "test" },
             new Confidence(0.9),
-            "Web UI Test Memory"
+            "Web UI Test Memory",
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Assert
         Assert.NotNull(memory);
         Assert.Equal("Web UI Test Memory", memory.Title);
-        
+
         // Verify retrieval
-        var retrieved = await storage.Get(memory.Id, CancellationToken.None);
+        var retrieved = await storage.Get(memory.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(retrieved);
         Assert.Equal(memory.Id, retrieved.Id);
         Assert.Equal("web-ui-test", retrieved.Type);
-        
+
         _output.WriteLine($"✓ Successfully stored and retrieved memory: {memory.Id}");
     }
 
@@ -118,20 +118,21 @@ public class WebUIIntegrationTests : IDisposable
                     "test",
                     new[] { "pagination", "test" },
                     new Confidence(1.0),
-                    $"Pagination Memory {i}"
+                    $"Pagination Memory {i}",
+                    cancellationToken: TestContext.Current.CancellationToken
                 );
                 createdMemories.Add(memory.Id);
             }
 
             // Act - Test pagination
-            var (page1Memories, page1Total) = await storage.GetMemoriesPaginated(1, 10, cancellationToken: CancellationToken.None);
-            var (page2Memories, page2Total) = await storage.GetMemoriesPaginated(2, 10, cancellationToken: CancellationToken.None);
+            var (page1Memories, page1Total) = await storage.GetMemoriesPaginated(1, 10, cancellationToken: TestContext.Current.CancellationToken);
+            var (page2Memories, page2Total) = await storage.GetMemoriesPaginated(2, 10, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(10, page1Memories.Count);
             Assert.Equal(10, page2Memories.Count);
             Assert.Equal(page1Total, page2Total); // Total should be same
-            
+
             // Ensure no overlap between pages
             var page1Ids = page1Memories.Select(m => m.Id).ToHashSet();
             var page2Ids = page2Memories.Select(m => m.Id).ToHashSet();
@@ -144,7 +145,7 @@ public class WebUIIntegrationTests : IDisposable
             // Clean up
             foreach (var memoryId in createdMemories)
             {
-                await storage.Delete(memoryId, CancellationToken.None);
+                await storage.Delete(memoryId, TestContext.Current.CancellationToken);
             }
         }
     }
@@ -154,7 +155,7 @@ public class WebUIIntegrationTests : IDisposable
     {
         // Arrange
         var storage = _serviceProvider.GetRequiredService<IStorage>();
-        
+
         // Create initial memory
         var originalMemory = await storage.StoreMemory(
             "update-test",
@@ -162,7 +163,8 @@ public class WebUIIntegrationTests : IDisposable
             "test",
             new[] { "update", "test" },
             new Confidence(0.8),
-            "Original Title"
+            "Original Title",
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         try
@@ -176,7 +178,7 @@ public class WebUIIntegrationTests : IDisposable
                 new[] { "updated", "test", "web-ui" },
                 new Confidence(0.95),
                 "Updated Title for Web UI",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             // Assert
@@ -189,16 +191,16 @@ public class WebUIIntegrationTests : IDisposable
             Assert.Equal(new Confidence(0.95), updatedMemory.Confidence);
 
             // Verify persistence
-            var retrieved = await storage.Get(originalMemory.Id, CancellationToken.None);
+            var retrieved = await storage.Get(originalMemory.Id, TestContext.Current.CancellationToken);
             Assert.NotNull(retrieved);
             Assert.Equal("Updated content for web UI", retrieved.Text);
-            
+
             _output.WriteLine($"✓ Successfully updated memory: {originalMemory.Id}");
         }
         finally
         {
             // Clean up
-            await storage.Delete(originalMemory.Id, CancellationToken.None);
+            await storage.Delete(originalMemory.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -230,19 +232,20 @@ public class WebUIIntegrationTests : IDisposable
                     "test",
                     new[] { "stats-test" },
                     new Confidence(1.0),
-                    $"Stats Test - {type}"
+                    $"Stats Test - {type}",
+                    cancellationToken: TestContext.Current.CancellationToken
                 );
                 createdMemories.Add(memory.Id);
             }
 
             // Act
-            var stats = await statsService.GetStatsAsync();
+            var stats = await statsService.GetStatsAsync(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.NotNull(stats);
             Assert.True(stats.TotalMemories >= 5); // At least our test data
             Assert.True(stats.AverageMemorySizeBytes > 0); // Should have some content
-            
+
             _output.WriteLine($"✓ Stats service returned: {stats.TotalMemories} total memories, avg size {stats.AverageMemorySizeBytes} bytes");
         }
         finally
@@ -250,7 +253,7 @@ public class WebUIIntegrationTests : IDisposable
             // Clean up
             foreach (var memoryId in createdMemories)
             {
-                await storage.Delete(memoryId, CancellationToken.None);
+                await storage.Delete(memoryId, TestContext.Current.CancellationToken);
             }
         }
     }
@@ -282,13 +285,14 @@ public class WebUIIntegrationTests : IDisposable
                     "test",
                     new[] { "type-test" },
                     new Confidence(1.0),
-                    $"Type Test - {type}"
+                    $"Type Test - {type}",
+                    cancellationToken: TestContext.Current.CancellationToken
                 );
                 createdMemories.Add(memory.Id);
             }
 
             // Act
-            var distinctTypes = await storage.GetDistinctMemoryTypes();
+            var distinctTypes = await storage.GetDistinctMemoryTypes(TestContext.Current.CancellationToken);
 
             // Assert
             var testTypes = distinctTypes.Where(t => t.StartsWith("type-test-")).ToList();
@@ -296,7 +300,7 @@ public class WebUIIntegrationTests : IDisposable
             Assert.Contains("type-test-2", testTypes);
             Assert.Contains("type-test-3", testTypes);
             Assert.Equal(3, testTypes.Count); // Should be exactly 3 distinct types from our test data
-            
+
             _output.WriteLine($"✓ Distinct types endpoint returned {testTypes.Count} unique test types: {string.Join(", ", testTypes)}");
         }
         finally
@@ -304,7 +308,7 @@ public class WebUIIntegrationTests : IDisposable
             // Clean up
             foreach (var memoryId in createdMemories)
             {
-                await storage.Delete(memoryId, CancellationToken.None);
+                await storage.Delete(memoryId, TestContext.Current.CancellationToken);
             }
         }
     }
@@ -335,7 +339,8 @@ public class WebUIIntegrationTests : IDisposable
                     "test",
                     tags,
                     new Confidence(1.0),
-                    $"Search Test: {content}"
+                    $"Search Test: {content}",
+                    cancellationToken: TestContext.Current.CancellationToken
                 );
                 createdMemories.Add(memory.Id);
             }
@@ -345,7 +350,8 @@ public class WebUIIntegrationTests : IDisposable
                 "programming languages tutorial",
                 limit: 10,
                 new SimilarityScore(0.3),
-                filterTags: new[] { "programming" }
+                filterTags: new[] { "programming" },
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             // Act - Search for web development
@@ -353,16 +359,17 @@ public class WebUIIntegrationTests : IDisposable
                 "web development practices",
                 limit: 10,
                 new SimilarityScore(0.3),
-                filterTags: new[] { "web" }
+                filterTags: new[] { "web" },
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             // Assert
             Assert.NotEmpty(programmingResults);
             Assert.NotEmpty(webResults);
-            
+
             // Should find programming-related content
             Assert.Contains(programmingResults, r => r.Text.Contains("JavaScript") || r.Text.Contains("Python"));
-            
+
             // Should find web development content
             Assert.Contains(webResults, r => r.Text.Contains("Web development"));
 
@@ -385,7 +392,7 @@ public class WebUIIntegrationTests : IDisposable
             // Clean up
             foreach (var memoryId in createdMemories)
             {
-                await storage.Delete(memoryId, CancellationToken.None);
+                await storage.Delete(memoryId, TestContext.Current.CancellationToken);
             }
         }
     }
@@ -395,7 +402,7 @@ public class WebUIIntegrationTests : IDisposable
     {
         // Arrange
         var storage = _serviceProvider.GetRequiredService<IStorage>();
-        
+
         // Create memory to delete
         var memory = await storage.StoreMemory(
             "delete-test",
@@ -403,21 +410,22 @@ public class WebUIIntegrationTests : IDisposable
             "test",
             new[] { "delete", "test" },
             new Confidence(1.0),
-            "Memory for Deletion Test"
+            "Memory for Deletion Test",
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Verify it exists
-        var existsBefore = await storage.Get(memory.Id, CancellationToken.None);
+        var existsBefore = await storage.Get(memory.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(existsBefore);
 
         // Act - Delete the memory
-        var deleted = await storage.Delete(memory.Id, CancellationToken.None);
+        var deleted = await storage.Delete(memory.Id, TestContext.Current.CancellationToken);
 
         // Assert - Verify it's gone
         Assert.True(deleted);
-        var existsAfter = await storage.Get(memory.Id, CancellationToken.None);
+        var existsAfter = await storage.Get(memory.Id, TestContext.Current.CancellationToken);
         Assert.Null(existsAfter);
-        
+
         _output.WriteLine($"✓ Successfully deleted memory: {memory.Id}");
     }
 
@@ -437,7 +445,8 @@ public class WebUIIntegrationTests : IDisposable
                 "test",
                 new[] { "test", "edge-case" },
                 new Confidence(1.0),
-                "Empty Type Test"
+                "Empty Type Test",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             Assert.NotNull(memoryWithEmptyType);
             Assert.Equal("", memoryWithEmptyType.Type);
@@ -450,7 +459,8 @@ public class WebUIIntegrationTests : IDisposable
                 "test",
                 new[] { "test", "edge-case" },
                 new Confidence(1.0),
-                "Empty Content Test"
+                "Empty Content Test",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             Assert.NotNull(memoryWithEmptyContent);
             // When content is empty but title exists, Text field will be "Title "
@@ -464,7 +474,8 @@ public class WebUIIntegrationTests : IDisposable
                 "test",
                 null,
                 new Confidence(1.0),
-                "Null Tags Test"
+                "Null Tags Test",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             Assert.NotNull(memoryWithNullTags);
             Assert.Null(memoryWithNullTags.Tags);
@@ -477,7 +488,8 @@ public class WebUIIntegrationTests : IDisposable
                 "test",
                 new[] { "test", "edge-case" },
                 new Confidence(1.0),
-                "Required Title Test"
+                "Required Title Test",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             Assert.NotNull(memoryWithNonNullTitle);
             Assert.Equal("Required Title Test", memoryWithNonNullTitle.Title);
@@ -490,7 +502,7 @@ public class WebUIIntegrationTests : IDisposable
             // Clean up
             foreach (var memoryId in createdMemories)
             {
-                await storage.Delete(memoryId, CancellationToken.None);
+                await storage.Delete(memoryId, TestContext.Current.CancellationToken);
             }
         }
     }
@@ -500,4 +512,4 @@ public class WebUIIntegrationTests : IDisposable
         _httpClient?.Dispose();
         (_serviceProvider as IDisposable)?.Dispose();
     }
-} 
+}

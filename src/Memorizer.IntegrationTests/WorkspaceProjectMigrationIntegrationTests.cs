@@ -1,9 +1,5 @@
-using Memorizer.Models;
 using Memorizer.Models.Enums;
-using Memorizer.Models.ValueTypes;
-using Memorizer.Services;
 using Npgsql;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -33,7 +29,7 @@ public class WorkspaceProjectMigrationIntegrationTests
             FROM pg_attribute
             WHERE attrelid = 'memories'::regclass
             AND attname = 'embedding'", conn);
-        return Convert.ToInt32(await cmd.ExecuteScalarAsync());
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -51,7 +47,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Migration012_WorkspacesTable_Exists()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         await using var cmd = new NpgsqlCommand(@"
             SELECT EXISTS (
@@ -59,7 +55,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 WHERE table_name = 'workspaces'
             )", conn);
 
-        var exists = (bool)(await cmd.ExecuteScalarAsync() ?? false);
+        var exists = (bool)(await cmd.ExecuteScalarAsync(cancellationToken: TestContext.Current.CancellationToken) ?? false);
         Assert.True(exists, "workspaces table should exist");
         _output.WriteLine("workspaces table exists");
     }
@@ -68,7 +64,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Migration012_WorkspacesTable_HasExpectedColumns()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         await using var cmd = new NpgsqlCommand(@"
             SELECT column_name, data_type, is_nullable
@@ -77,8 +73,8 @@ public class WorkspaceProjectMigrationIntegrationTests
             ORDER BY ordinal_position", conn);
 
         var columns = new Dictionary<string, (string DataType, string IsNullable)>();
-        await using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken: TestContext.Current.CancellationToken);
+        while (await reader.ReadAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             var name = reader.GetString(0);
             var dataType = reader.GetString(1);
@@ -105,7 +101,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Migration012_UnfiledWorkspace_Exists()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var unfiledId = Guid.Empty;
 
@@ -115,8 +111,8 @@ public class WorkspaceProjectMigrationIntegrationTests
             WHERE id = @id", conn);
         cmd.Parameters.AddWithValue("id", unfiledId);
 
-        await using var reader = await cmd.ExecuteReaderAsync();
-        Assert.True(await reader.ReadAsync(), "Unfiled workspace should exist");
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(await reader.ReadAsync(cancellationToken: TestContext.Current.CancellationToken), "Unfiled workspace should exist");
 
         var id = reader.GetGuid(0);
         var name = reader.GetString(1);
@@ -139,7 +135,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Migration013_ProjectsTable_Exists()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         await using var cmd = new NpgsqlCommand(@"
             SELECT EXISTS (
@@ -147,7 +143,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 WHERE table_name = 'projects'
             )", conn);
 
-        var exists = (bool)(await cmd.ExecuteScalarAsync() ?? false);
+        var exists = (bool)(await cmd.ExecuteScalarAsync(cancellationToken: TestContext.Current.CancellationToken) ?? false);
         Assert.True(exists, "projects table should exist");
         _output.WriteLine("projects table exists");
     }
@@ -156,7 +152,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Migration013_ProjectsTable_HasExpectedColumns()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         await using var cmd = new NpgsqlCommand(@"
             SELECT column_name, data_type, is_nullable
@@ -165,8 +161,8 @@ public class WorkspaceProjectMigrationIntegrationTests
             ORDER BY ordinal_position", conn);
 
         var columns = new Dictionary<string, (string DataType, string IsNullable)>();
-        await using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken: TestContext.Current.CancellationToken);
+        while (await reader.ReadAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             var name = reader.GetString(0);
             var dataType = reader.GetString(1);
@@ -199,7 +195,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Migration013_ProjectsTable_StatusConstraint_EnforcesValidValues()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // First create a workspace to use as foreign key
         var workspaceId = Guid.NewGuid();
@@ -208,7 +204,7 @@ public class WorkspaceProjectMigrationIntegrationTests
             VALUES (@id, 'Test Workspace', 'test-workspace')", conn))
         {
             createWs.Parameters.AddWithValue("id", workspaceId);
-            await createWs.ExecuteNonQueryAsync();
+            await createWs.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
 
         try
@@ -220,7 +216,7 @@ public class WorkspaceProjectMigrationIntegrationTests
             cmd.Parameters.AddWithValue("id", Guid.NewGuid());
             cmd.Parameters.AddWithValue("workspace_id", workspaceId);
 
-            var ex = await Assert.ThrowsAsync<PostgresException>(async () => await cmd.ExecuteNonQueryAsync());
+            var ex = await Assert.ThrowsAsync<PostgresException>(async () => await cmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken));
             Assert.Contains("check", ex.Message.ToLower());
             _output.WriteLine($"Status constraint enforced: {ex.MessageText}");
         }
@@ -229,7 +225,7 @@ public class WorkspaceProjectMigrationIntegrationTests
             // Cleanup
             await using var cleanup = new NpgsqlCommand("DELETE FROM workspaces WHERE id = @id", conn);
             cleanup.Parameters.AddWithValue("id", workspaceId);
-            await cleanup.ExecuteNonQueryAsync();
+            await cleanup.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -241,7 +237,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Migration014_MemoriesTable_HasOwnerColumns()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         await using var cmd = new NpgsqlCommand(@"
             SELECT column_name, data_type
@@ -251,8 +247,8 @@ public class WorkspaceProjectMigrationIntegrationTests
             ORDER BY column_name", conn);
 
         var columns = new Dictionary<string, string>();
-        await using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken: TestContext.Current.CancellationToken);
+        while (await reader.ReadAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             var name = reader.GetString(0);
             var dataType = reader.GetString(1);
@@ -284,7 +280,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Migration014_ExistingMemories_HaveDefaultOwner()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Check that any existing memories have the default owner (Unfiled workspace)
         await using var cmd = new NpgsqlCommand(@"
@@ -292,7 +288,7 @@ public class WorkspaceProjectMigrationIntegrationTests
             FROM memories
             WHERE owner_type != 0 OR owner_id != '00000000-0000-0000-0000-000000000000'", conn);
 
-        var nonDefaultCount = Convert.ToInt64(await cmd.ExecuteScalarAsync());
+        var nonDefaultCount = Convert.ToInt64(await cmd.ExecuteScalarAsync(cancellationToken: TestContext.Current.CancellationToken));
 
         // All memories should default to Unfiled workspace (owner_type=0, owner_id=Guid.Empty)
         Assert.Equal(0, nonDefaultCount);
@@ -303,7 +299,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Migration014_MemoriesTable_OwnerTypeConstraint_EnforcesValidValues()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var dimension = await GetEmbeddingDimensionAsync(conn);
         var dummyEmbedding = GenerateDummyEmbedding(dimension);
@@ -315,7 +311,7 @@ public class WorkspaceProjectMigrationIntegrationTests
         cmd.Parameters.AddWithValue("id", Guid.NewGuid());
         cmd.Parameters.AddWithValue("owner_id", Guid.Empty);
 
-        var ex = await Assert.ThrowsAsync<PostgresException>(async () => await cmd.ExecuteNonQueryAsync());
+        var ex = await Assert.ThrowsAsync<PostgresException>(async () => await cmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.Contains("check", ex.Message.ToLower());
         _output.WriteLine($"owner_type constraint enforced: {ex.MessageText}");
     }
@@ -328,7 +324,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Workspace_CanCreate_AndRetrieve()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var workspaceId = Guid.NewGuid();
         var name = $"Test Workspace {workspaceId:N}";
@@ -346,7 +342,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 createCmd.Parameters.AddWithValue("name", name);
                 createCmd.Parameters.AddWithValue("slug", slug);
                 createCmd.Parameters.AddWithValue("description", description);
-                var affected = await createCmd.ExecuteNonQueryAsync();
+                var affected = await createCmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
                 Assert.Equal(1, affected);
             }
 
@@ -356,8 +352,8 @@ public class WorkspaceProjectMigrationIntegrationTests
                 FROM workspaces WHERE id = @id", conn);
             readCmd.Parameters.AddWithValue("id", workspaceId);
 
-            await using var reader = await readCmd.ExecuteReaderAsync();
-            Assert.True(await reader.ReadAsync(), "Should retrieve the created workspace");
+            await using var reader = await readCmd.ExecuteReaderAsync(cancellationToken: TestContext.Current.CancellationToken);
+            Assert.True(await reader.ReadAsync(cancellationToken: TestContext.Current.CancellationToken), "Should retrieve the created workspace");
 
             Assert.Equal(workspaceId, reader.GetGuid(0));
             Assert.Equal(name, reader.GetString(1));
@@ -374,7 +370,7 @@ public class WorkspaceProjectMigrationIntegrationTests
             // Cleanup
             await using var cleanup = new NpgsqlCommand("DELETE FROM workspaces WHERE id = @id", conn);
             cleanup.Parameters.AddWithValue("id", workspaceId);
-            await cleanup.ExecuteNonQueryAsync();
+            await cleanup.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -382,7 +378,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Workspace_CanCreateNested_WithParent()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var parentId = Guid.NewGuid();
         var childId = Guid.NewGuid();
@@ -395,7 +391,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 VALUES (@id, 'Parent Workspace', 'parent-workspace')", conn))
             {
                 createParent.Parameters.AddWithValue("id", parentId);
-                await createParent.ExecuteNonQueryAsync();
+                await createParent.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Create child
@@ -405,7 +401,7 @@ public class WorkspaceProjectMigrationIntegrationTests
             {
                 createChild.Parameters.AddWithValue("id", childId);
                 createChild.Parameters.AddWithValue("parent_id", parentId);
-                await createChild.ExecuteNonQueryAsync();
+                await createChild.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Verify parent-child relationship
@@ -413,7 +409,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 SELECT parent_id FROM workspaces WHERE id = @id", conn);
             readCmd.Parameters.AddWithValue("id", childId);
 
-            var retrievedParentId = (Guid)(await readCmd.ExecuteScalarAsync() ?? Guid.Empty);
+            var retrievedParentId = (Guid)(await readCmd.ExecuteScalarAsync(cancellationToken: TestContext.Current.CancellationToken) ?? Guid.Empty);
             Assert.Equal(parentId, retrievedParentId);
 
             _output.WriteLine("Created nested workspace hierarchy");
@@ -424,12 +420,12 @@ public class WorkspaceProjectMigrationIntegrationTests
             await using (var cleanupChild = new NpgsqlCommand("DELETE FROM workspaces WHERE id = @id", conn))
             {
                 cleanupChild.Parameters.AddWithValue("id", childId);
-                await cleanupChild.ExecuteNonQueryAsync();
+                await cleanupChild.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
             await using (var cleanupParent = new NpgsqlCommand("DELETE FROM workspaces WHERE id = @id", conn))
             {
                 cleanupParent.Parameters.AddWithValue("id", parentId);
-                await cleanupParent.ExecuteNonQueryAsync();
+                await cleanupParent.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
         }
     }
@@ -442,7 +438,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Project_CanCreate_AndRetrieve()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var workspaceId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
@@ -455,7 +451,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 VALUES (@id, 'Test Workspace', 'test-workspace')", conn))
             {
                 createWs.Parameters.AddWithValue("id", workspaceId);
-                await createWs.ExecuteNonQueryAsync();
+                await createWs.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Create project
@@ -466,7 +462,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 createProj.Parameters.AddWithValue("id", projectId);
                 createProj.Parameters.AddWithValue("workspace_id", workspaceId);
                 createProj.Parameters.AddWithValue("status", (short)ProjectStatusEnum.Active);
-                await createProj.ExecuteNonQueryAsync();
+                await createProj.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Retrieve
@@ -475,8 +471,8 @@ public class WorkspaceProjectMigrationIntegrationTests
                 FROM projects WHERE id = @id", conn);
             readCmd.Parameters.AddWithValue("id", projectId);
 
-            await using var reader = await readCmd.ExecuteReaderAsync();
-            Assert.True(await reader.ReadAsync());
+            await using var reader = await readCmd.ExecuteReaderAsync(cancellationToken: TestContext.Current.CancellationToken);
+            Assert.True(await reader.ReadAsync(cancellationToken: TestContext.Current.CancellationToken));
 
             Assert.Equal(projectId, reader.GetGuid(0));
             Assert.Equal(workspaceId, reader.GetGuid(1));
@@ -494,12 +490,12 @@ public class WorkspaceProjectMigrationIntegrationTests
             await using (var cleanupProj = new NpgsqlCommand("DELETE FROM projects WHERE id = @id", conn))
             {
                 cleanupProj.Parameters.AddWithValue("id", projectId);
-                await cleanupProj.ExecuteNonQueryAsync();
+                await cleanupProj.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
             await using (var cleanupWs = new NpgsqlCommand("DELETE FROM workspaces WHERE id = @id", conn))
             {
                 cleanupWs.Parameters.AddWithValue("id", workspaceId);
-                await cleanupWs.ExecuteNonQueryAsync();
+                await cleanupWs.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
         }
     }
@@ -508,7 +504,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Project_AllStatusValues_CanBeStored()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var workspaceId = Guid.NewGuid();
         var projectIds = new List<Guid>();
@@ -521,7 +517,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 VALUES (@id, 'Status Test Workspace', 'status-test')", conn))
             {
                 createWs.Parameters.AddWithValue("id", workspaceId);
-                await createWs.ExecuteNonQueryAsync();
+                await createWs.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Test all status values
@@ -548,12 +544,12 @@ public class WorkspaceProjectMigrationIntegrationTests
                 createProj.Parameters.AddWithValue("name", $"Project {status}");
                 createProj.Parameters.AddWithValue("slug", $"project-{status.ToStringValue()}");
                 createProj.Parameters.AddWithValue("status", (short)status);
-                await createProj.ExecuteNonQueryAsync();
+                await createProj.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
 
                 // Verify
                 await using var readCmd = new NpgsqlCommand("SELECT status FROM projects WHERE id = @id", conn);
                 readCmd.Parameters.AddWithValue("id", projectId);
-                var storedStatus = (short)(await readCmd.ExecuteScalarAsync() ?? -1);
+                var storedStatus = (short)(await readCmd.ExecuteScalarAsync(cancellationToken: TestContext.Current.CancellationToken) ?? -1);
                 Assert.Equal((short)status, storedStatus);
 
                 _output.WriteLine($"Stored and retrieved status: {status} = {(short)status}");
@@ -568,11 +564,11 @@ public class WorkspaceProjectMigrationIntegrationTests
             {
                 await using var cleanupProj = new NpgsqlCommand("DELETE FROM projects WHERE id = @id", conn);
                 cleanupProj.Parameters.AddWithValue("id", projectId);
-                await cleanupProj.ExecuteNonQueryAsync();
+                await cleanupProj.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
             await using var cleanupWs = new NpgsqlCommand("DELETE FROM workspaces WHERE id = @id", conn);
             cleanupWs.Parameters.AddWithValue("id", workspaceId);
-            await cleanupWs.ExecuteNonQueryAsync();
+            await cleanupWs.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -584,7 +580,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Memory_CanBeAssigned_ToWorkspace()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var workspaceId = Guid.NewGuid();
         var memoryId = Guid.NewGuid();
@@ -599,7 +595,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 VALUES (@id, 'Memory Test Workspace', 'memory-test-workspace')", conn))
             {
                 createWs.Parameters.AddWithValue("id", workspaceId);
-                await createWs.ExecuteNonQueryAsync();
+                await createWs.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Create memory assigned to workspace
@@ -610,7 +606,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 createMem.Parameters.AddWithValue("id", memoryId);
                 createMem.Parameters.AddWithValue("owner_type", (short)OwnerTypeEnum.Workspace);
                 createMem.Parameters.AddWithValue("owner_id", workspaceId);
-                await createMem.ExecuteNonQueryAsync();
+                await createMem.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Verify
@@ -618,8 +614,8 @@ public class WorkspaceProjectMigrationIntegrationTests
                 SELECT owner_type, owner_id FROM memories WHERE id = @id", conn);
             readCmd.Parameters.AddWithValue("id", memoryId);
 
-            await using var reader = await readCmd.ExecuteReaderAsync();
-            Assert.True(await reader.ReadAsync());
+            await using var reader = await readCmd.ExecuteReaderAsync(cancellationToken: TestContext.Current.CancellationToken);
+            Assert.True(await reader.ReadAsync(cancellationToken: TestContext.Current.CancellationToken));
 
             Assert.Equal((short)OwnerTypeEnum.Workspace, reader.GetInt16(0));
             Assert.Equal(workspaceId, reader.GetGuid(1));
@@ -631,12 +627,12 @@ public class WorkspaceProjectMigrationIntegrationTests
             await using (var cleanupMem = new NpgsqlCommand("DELETE FROM memories WHERE id = @id", conn))
             {
                 cleanupMem.Parameters.AddWithValue("id", memoryId);
-                await cleanupMem.ExecuteNonQueryAsync();
+                await cleanupMem.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
             await using (var cleanupWs = new NpgsqlCommand("DELETE FROM workspaces WHERE id = @id", conn))
             {
                 cleanupWs.Parameters.AddWithValue("id", workspaceId);
-                await cleanupWs.ExecuteNonQueryAsync();
+                await cleanupWs.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
         }
     }
@@ -645,7 +641,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Memory_CanBeAssigned_ToProject()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var workspaceId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
@@ -661,7 +657,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 VALUES (@id, 'Project Memory Test Workspace', 'proj-mem-test')", conn))
             {
                 createWs.Parameters.AddWithValue("id", workspaceId);
-                await createWs.ExecuteNonQueryAsync();
+                await createWs.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             await using (var createProj = new NpgsqlCommand(@"
@@ -670,7 +666,7 @@ public class WorkspaceProjectMigrationIntegrationTests
             {
                 createProj.Parameters.AddWithValue("id", projectId);
                 createProj.Parameters.AddWithValue("workspace_id", workspaceId);
-                await createProj.ExecuteNonQueryAsync();
+                await createProj.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Create memory assigned to project
@@ -681,7 +677,7 @@ public class WorkspaceProjectMigrationIntegrationTests
                 createMem.Parameters.AddWithValue("id", memoryId);
                 createMem.Parameters.AddWithValue("owner_type", (short)OwnerTypeEnum.Project);
                 createMem.Parameters.AddWithValue("owner_id", projectId);
-                await createMem.ExecuteNonQueryAsync();
+                await createMem.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Verify
@@ -689,8 +685,8 @@ public class WorkspaceProjectMigrationIntegrationTests
                 SELECT owner_type, owner_id FROM memories WHERE id = @id", conn);
             readCmd.Parameters.AddWithValue("id", memoryId);
 
-            await using var reader = await readCmd.ExecuteReaderAsync();
-            Assert.True(await reader.ReadAsync());
+            await using var reader = await readCmd.ExecuteReaderAsync(cancellationToken: TestContext.Current.CancellationToken);
+            Assert.True(await reader.ReadAsync(cancellationToken: TestContext.Current.CancellationToken));
 
             Assert.Equal((short)OwnerTypeEnum.Project, reader.GetInt16(0));
             Assert.Equal(projectId, reader.GetGuid(1));
@@ -702,17 +698,17 @@ public class WorkspaceProjectMigrationIntegrationTests
             await using (var cleanupMem = new NpgsqlCommand("DELETE FROM memories WHERE id = @id", conn))
             {
                 cleanupMem.Parameters.AddWithValue("id", memoryId);
-                await cleanupMem.ExecuteNonQueryAsync();
+                await cleanupMem.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
             await using (var cleanupProj = new NpgsqlCommand("DELETE FROM projects WHERE id = @id", conn))
             {
                 cleanupProj.Parameters.AddWithValue("id", projectId);
-                await cleanupProj.ExecuteNonQueryAsync();
+                await cleanupProj.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
             await using (var cleanupWs = new NpgsqlCommand("DELETE FROM workspaces WHERE id = @id", conn))
             {
                 cleanupWs.Parameters.AddWithValue("id", workspaceId);
-                await cleanupWs.ExecuteNonQueryAsync();
+                await cleanupWs.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
         }
     }
@@ -721,7 +717,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Memory_Archetype_AllValues_CanBeStored()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         var memoryIds = new List<Guid>();
         var dimension = await GetEmbeddingDimensionAsync(conn);
@@ -741,12 +737,12 @@ public class WorkspaceProjectMigrationIntegrationTests
                     VALUES (@id, 'test', 'Test archetype memory', '{{}}'::jsonb, 'test', '{dummyEmbedding}'::vector, '{dummyEmbedding}'::vector, ARRAY[]::text[], 1.0, now(), now(), 0, '00000000-0000-0000-0000-000000000000', @archetype, 0)", conn);
                 createMem.Parameters.AddWithValue("id", memoryId);
                 createMem.Parameters.AddWithValue("archetype", (short)archetype);
-                await createMem.ExecuteNonQueryAsync();
+                await createMem.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
 
                 // Verify
                 await using var readCmd = new NpgsqlCommand("SELECT archetype FROM memories WHERE id = @id", conn);
                 readCmd.Parameters.AddWithValue("id", memoryId);
-                var storedArchetype = (short)(await readCmd.ExecuteScalarAsync() ?? -1);
+                var storedArchetype = (short)(await readCmd.ExecuteScalarAsync(cancellationToken: TestContext.Current.CancellationToken) ?? -1);
                 Assert.Equal((short)archetype, storedArchetype);
 
                 _output.WriteLine($"Stored and retrieved archetype: {archetype} = {(short)archetype}");
@@ -760,7 +756,7 @@ public class WorkspaceProjectMigrationIntegrationTests
             {
                 await using var cleanup = new NpgsqlCommand("DELETE FROM memories WHERE id = @id", conn);
                 cleanup.Parameters.AddWithValue("id", memoryId);
-                await cleanup.ExecuteNonQueryAsync();
+                await cleanup.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
             }
         }
     }
@@ -773,7 +769,7 @@ public class WorkspaceProjectMigrationIntegrationTests
     public async Task Indexes_Exist_ForPerformance()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         await using var cmd = new NpgsqlCommand(@"
             SELECT indexname, tablename
@@ -784,8 +780,8 @@ public class WorkspaceProjectMigrationIntegrationTests
             ORDER BY tablename, indexname", conn);
 
         var indexes = new List<(string IndexName, string TableName)>();
-        await using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken: TestContext.Current.CancellationToken);
+        while (await reader.ReadAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             var indexName = reader.GetString(0);
             var tableName = reader.GetString(1);

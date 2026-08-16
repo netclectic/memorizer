@@ -3,15 +3,14 @@ using Akka.Hosting;
 using Akka.Hosting.TestKit;
 using Memorizer.Actors;
 using Memorizer.Models;
-using Memorizer.Models.ValueTypes;
 using Memorizer.Models.Enums;
+using Memorizer.Models.ValueTypes;
 using Memorizer.Services;
 using Memorizer.Services.Providers;
 using Memorizer.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Pgvector;
-using Xunit.Abstractions;
 using SimilarMemory = Memorizer.Models.SimilarMemory;
 
 namespace Memorizer.IntegrationTests;
@@ -59,11 +58,11 @@ public class TitleGenerationActorTests : TestKit
     {
         // Act - This is the core test of our ActorSelection fix
         var titleGenerationActor = ActorRegistry.Get<TitleGenerationActorKey>();
-        
+
         // Assert
         Assert.NotNull(titleGenerationActor);
         Assert.Equal("title-generation", titleGenerationActor.Path.Name);
-        
+
         _output.WriteLine("✅ TitleGenerationActor successfully registered in ActorRegistry via IRequiredActor pattern");
     }
 
@@ -72,11 +71,11 @@ public class TitleGenerationActorTests : TestKit
     {
         // Act
         var titleGenerationActor = ActorRegistry.Get<TitleGenerationActorKey>();
-        
+
         // Assert - Verify the actor path and system are correct
         Assert.NotNull(titleGenerationActor);
         Assert.Contains("title-generation", titleGenerationActor.Path.ToString());
-        
+
         _output.WriteLine($"✅ Actor resolved correctly: {titleGenerationActor.Path}");
     }
 
@@ -90,11 +89,12 @@ public class TitleGenerationActorTests : TestKit
         // Act - Subscribe BEFORE starting the batch (should get Idle status and complete immediately)
         var idleSubscription = await testActor.Ask<ProgressSubscription>(
             new SubscribeToProgress("idle-subscriber"),
-            TimeSpan.FromSeconds(5));
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
 
         // Collect idle subscription events (should receive Idle status and complete immediately)
         var idleEvents = new List<ProgressEvent>();
-        await foreach (var evt in idleSubscription.Reader.ReadAllAsync())
+        await foreach (var evt in idleSubscription.Reader.ReadAllAsync(TestContext.Current.CancellationToken))
         {
             idleEvents.Add(evt);
         }
@@ -110,11 +110,12 @@ public class TitleGenerationActorTests : TestKit
         // Subscribe - this Ask is queued after the batch Tell, so the actor will be in Running state
         var activeSubscription = await testActor.Ask<ProgressSubscription>(
             new SubscribeToProgress("active-subscriber"),
-            TimeSpan.FromSeconds(5));
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
 
         // Collect events from the running batch (even if they all come at once)
         var progressEventsList = new List<ProgressEvent>();
-        await foreach (var evt in activeSubscription.Reader.ReadAllAsync())
+        await foreach (var evt in activeSubscription.Reader.ReadAllAsync(TestContext.Current.CancellationToken))
         {
             progressEventsList.Add(evt);
             _output.WriteLine($"Progress: {evt.TotalProcessed}/{evt.TotalItems} processed, Status={evt.Status}");
@@ -370,4 +371,4 @@ public class TitleGenerationActorTests : TestKit
         public void Dispose() { }
     }
 
-} 
+}

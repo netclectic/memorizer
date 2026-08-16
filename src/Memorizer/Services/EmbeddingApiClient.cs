@@ -1,5 +1,4 @@
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using Memorizer.Models;
 using Memorizer.Settings;
 using Microsoft.Extensions.Options;

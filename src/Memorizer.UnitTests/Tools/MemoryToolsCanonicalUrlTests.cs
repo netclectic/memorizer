@@ -6,9 +6,8 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
-using PostgMem.Tools;
 using Pgvector;
-using System.Text.Json;
+using PostgMem.Tools;
 
 namespace Memorizer.UnitTests.Tools;
 
@@ -41,7 +40,8 @@ public class MemoryToolsCanonicalUrlTests
             type: "reference",
             text: "Test content",
             source: "LLM",
-            title: "Test Memory");
+            title: "Test Memory",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -69,7 +69,8 @@ public class MemoryToolsCanonicalUrlTests
             type: "reference",
             text: "Test content",
             source: "LLM",
-            title: "Test Memory");
+            title: "Test Memory",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(TestCanonicalUrl, result);
@@ -93,7 +94,8 @@ public class MemoryToolsCanonicalUrlTests
             text: "Test content",
             source: "LLM",
             title: "Test Memory",
-            workspaceId: workspaceId.ToString());
+            workspaceId: workspaceId.ToString(),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains($"Assigned to workspace {workspaceId}", result);
@@ -119,7 +121,8 @@ public class MemoryToolsCanonicalUrlTests
             source: "LLM",
             title: "Test Memory",
             projectId: "11111111-1111-1111-1111-111111111111",
-            workspaceId: "22222222-2222-2222-2222-222222222222");
+            workspaceId: "22222222-2222-2222-2222-222222222222",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("projectId and workspaceId are mutually exclusive", result);
@@ -142,7 +145,8 @@ public class MemoryToolsCanonicalUrlTests
             text: "Test content",
             source: "LLM",
             title: "Test Memory",
-            workspaceId: "not-a-guid");
+            workspaceId: "not-a-guid",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("workspaceId must be a valid GUID", result);
@@ -169,7 +173,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.SearchMemories("test query");
+        var result = await tools.SearchMemories("test query", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -193,7 +197,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, new FakeCanonicalUrlService());
 
         // Act
-        await tools.SearchMemories("test query", workspaceId: workspaceId.ToString());
+        await tools.SearchMemories("test query", workspaceId: workspaceId.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(fakeStorage.HybridSearchCalled);
@@ -215,7 +219,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, new FakeCanonicalUrlService());
 
         // Act
-        var result = await tools.SearchMemories("test query", workspaceId: "not-a-guid");
+        var result = await tools.SearchMemories("test query", workspaceId: "not-a-guid", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("workspaceId must be a valid GUID", result);
@@ -361,7 +365,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.Get(memoryId.Value, includeSimilar: false);
+        var result = await tools.Get(memoryId.Value, includeSimilar: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -390,7 +394,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.GetMany(memoryIds);
+        var result = await tools.GetMany(memoryIds, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -485,11 +489,11 @@ public class MemoryToolsCanonicalUrlTests
         }
 
         // Stub implementations for remaining interface members - grouped by category
-        
+
         // Basic CRUD
         public Task<bool> Delete(MemoryId id, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
-        
+
         public Task<Memory?> UpdateMemory(MemoryId id, string type, string content, string source, string[]? tags, Confidence confidence, string? title, CancellationToken cancellationToken)
             => throw new NotImplementedException();
 

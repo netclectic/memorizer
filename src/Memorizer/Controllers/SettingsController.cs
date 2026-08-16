@@ -1,9 +1,7 @@
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using Memorizer.Models;
 using Memorizer.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 using OllamaSharp;
 
 namespace Memorizer.Controllers;

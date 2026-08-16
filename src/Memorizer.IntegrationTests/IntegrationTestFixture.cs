@@ -1,7 +1,7 @@
-using System.Net.Http.Json;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Memorizer.Services;
+using System.Net.Http.Json;
 using Testcontainers.PostgreSql;
 
 namespace Memorizer.IntegrationTests;
@@ -13,7 +13,7 @@ public class IntegrationTestFixture : IAsyncLifetime
 {
     public readonly PostgreSqlContainer PostgresContainer;
     public readonly IContainer OllamaContainer;
-    
+
     // Limit pool size to prevent connection exhaustion.
     // Each test class creates its own IServiceProvider with its own NpgsqlDataSource/pool.
     // Test classes must implement IDisposable to properly release connections.
@@ -23,8 +23,7 @@ public class IntegrationTestFixture : IAsyncLifetime
 
     public IntegrationTestFixture()
     {
-        PostgresContainer = new PostgreSqlBuilder()
-            .WithImage("pgvector/pgvector:pg17")
+        PostgresContainer = new PostgreSqlBuilder("pgvector/pgvector:pg17")
             .WithCleanUp(true)
             .WithPortBinding(5432, true)
             .WithUsername("postgres")
@@ -32,15 +31,14 @@ public class IntegrationTestFixture : IAsyncLifetime
             .WithDatabase("postgmem")
             .Build();
 
-        OllamaContainer = new ContainerBuilder()
-            .WithImage("ollama/ollama:latest")
+        OllamaContainer = new ContainerBuilder("ollama/ollama:latest")
             .WithPortBinding(11434, true)
             .WithCleanUp(true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(11434)))
             .Build();
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // Start containers
         await Task.WhenAll(
@@ -54,13 +52,13 @@ public class IntegrationTestFixture : IAsyncLifetime
         using var httpClient = new HttpClient();
         httpClient.BaseAddress = new Uri(OllamaApiUrl);
         httpClient.Timeout = TimeSpan.FromMinutes(5); // Model pull can take a while
-        
+
         // Pull the embedding model
         var embeddingModelPullRequest = new
         {
             name = "all-minilm"
         };
-        
+
         var embeddingResponse = await httpClient.PostAsJsonAsync("/api/pull", embeddingModelPullRequest);
         embeddingResponse.EnsureSuccessStatusCode();
 
@@ -103,11 +101,11 @@ public class IntegrationTestFixture : IAsyncLifetime
         }
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await Task.WhenAll(
             PostgresContainer.DisposeAsync().AsTask(),
             OllamaContainer.DisposeAsync().AsTask()
         );
     }
-} 
+}

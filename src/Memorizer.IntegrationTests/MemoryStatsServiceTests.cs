@@ -8,7 +8,6 @@ using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -52,10 +51,10 @@ public class MemoryStatsServiceTests : TestKit
             Model = "all-minilm",
             Timeout = TimeSpan.FromMinutes(1)
         });
-        
-        services.AddMemorizer(initialize:false);
+
+        services.AddMemorizer(initialize: false);
     }
-    
+
     protected override void ConfigureAkka(AkkaConfigurationBuilder builder, IServiceProvider provider)
     {
         builder.ConfigureLoggers(configBuilder =>
@@ -69,25 +68,25 @@ public class MemoryStatsServiceTests : TestKit
     {
         // Get services from DI
         _statsService = Host.Services.GetRequiredService<IMemoryStatsService>();
-        
+
         // Get stats from empty database
-        var stats = await _statsService.GetStatsAsync();
-        
+        var stats = await _statsService.GetStatsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
         // We might have some memories from other tests, but we can check the types
         Assert.IsType<int>(stats.TotalMemories);
         Assert.IsType<long>(stats.AverageMemorySizeBytes);
     }
-    
+
     [Fact]
     public async Task MemoryStats_ReturnsCorrectCounts_AfterAddingMemories()
     {
         // Get services from DI
         _storage = Host.Services.GetRequiredService<IStorage>();
         _statsService = Host.Services.GetRequiredService<IMemoryStatsService>();
-        
+
         // First get the initial count
-        var initialStats = await _statsService.GetStatsAsync();
-        
+        var initialStats = await _statsService.GetStatsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
         // Add some memories
         var memories = new[]
         {
@@ -95,18 +94,18 @@ public class MemoryStatsServiceTests : TestKit
             (type: "test", content: "medium memory with more content", tags: new[] { "test", "medium" }),
             (type: "test", content: "large memory with even more content to increase the size", tags: new[] { "test", "large" })
         };
-        
+
         foreach (var (type, content, tags) in memories)
         {
-            await _storage.StoreMemory(type, content, "test", tags, new Confidence(1.0), "Test Memory");
+            await _storage.StoreMemory(type, content, "test", tags, new Confidence(1.0), "Test Memory", cancellationToken: TestContext.Current.CancellationToken);
         }
-        
+
         // Get the updated stats
-        var updatedStats = await _statsService.GetStatsAsync();
-        
+        var updatedStats = await _statsService.GetStatsAsync(cancellationToken: TestContext.Current.CancellationToken);
+
         // Verify counts have increased
         Assert.Equal(initialStats.TotalMemories + memories.Length, updatedStats.TotalMemories);
-        
+
         // Average size should now be positive
         Assert.True(updatedStats.AverageMemorySizeBytes > 0);
     }
@@ -117,19 +116,19 @@ public class MemoryStatsServiceTests : TestKit
         _storage = Host.Services.GetRequiredService<IStorage>();
         _statsService = Host.Services.GetRequiredService<IMemoryStatsService>();
 
-        var initialStats = await _statsService.GetStatsAsync();
+        var initialStats = await _statsService.GetStatsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Add a regular document memory
         await _storage.StoreMemory("test", "regular document memory", "test",
             new[] { "test" }, new Confidence(1.0), "Regular Memory",
-            archetype: ArchetypeEnum.Document);
+            archetype: ArchetypeEnum.Document, cancellationToken: TestContext.Current.CancellationToken);
 
         // Add a system memory (should be excluded from stats)
         await _storage.StoreMemory("test", "system indexing memory", "test",
             new[] { "system" }, new Confidence(1.0), "System Memory",
-            archetype: ArchetypeEnum.System);
+            archetype: ArchetypeEnum.System, cancellationToken: TestContext.Current.CancellationToken);
 
-        var updatedStats = await _statsService.GetStatsAsync();
+        var updatedStats = await _statsService.GetStatsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Only the regular memory should be counted, not the system one
         Assert.Equal(initialStats.TotalMemories + 1, updatedStats.TotalMemories);
@@ -141,22 +140,22 @@ public class MemoryStatsServiceTests : TestKit
         _storage = Host.Services.GetRequiredService<IStorage>();
 
         // Get initial paginated count
-        var (_, initialCount) = await _storage.GetMemoriesPaginated(page: 1, pageSize: 1000);
+        var (_, initialCount) = await _storage.GetMemoriesPaginated(page: 1, pageSize: 1000, cancellationToken: TestContext.Current.CancellationToken);
 
         // Add regular memories
         await _storage.StoreMemory("test", "paginated test memory 1", "test",
             new[] { "test" }, new Confidence(1.0), "Paginated Test 1",
-            archetype: ArchetypeEnum.Document);
+            archetype: ArchetypeEnum.Document, cancellationToken: TestContext.Current.CancellationToken);
         await _storage.StoreMemory("test", "paginated test memory 2", "test",
             new[] { "test" }, new Confidence(1.0), "Paginated Test 2",
-            archetype: ArchetypeEnum.Record);
+            archetype: ArchetypeEnum.Record, cancellationToken: TestContext.Current.CancellationToken);
 
         // Add a system memory (should be excluded)
         await _storage.StoreMemory("test", "system memory for pagination test", "test",
             new[] { "system" }, new Confidence(1.0), "System Paginated Test",
-            archetype: ArchetypeEnum.System);
+            archetype: ArchetypeEnum.System, cancellationToken: TestContext.Current.CancellationToken);
 
-        var (memories, totalCount) = await _storage.GetMemoriesPaginated(page: 1, pageSize: 1000);
+        var (memories, totalCount) = await _storage.GetMemoriesPaginated(page: 1, pageSize: 1000, cancellationToken: TestContext.Current.CancellationToken);
 
         // Count should only increase by 2 (the regular memories), not 3
         Assert.Equal(initialCount + 2, totalCount);
@@ -170,14 +169,14 @@ public class MemoryStatsServiceTests : TestKit
     {
         _storage = Host.Services.GetRequiredService<IStorage>();
 
-        var initialCount = await _storage.CountMemoriesWithoutMetadataEmbeddings();
+        var initialCount = await _storage.CountMemoriesWithoutMetadataEmbeddings(cancellationToken: TestContext.Current.CancellationToken);
 
         // Add a system memory - it should NOT be counted even if it lacks metadata embeddings
         await _storage.StoreMemory("test", "system memory for embedding count test", "test",
             new[] { "system" }, new Confidence(1.0), "System Embedding Test",
-            archetype: ArchetypeEnum.System);
+            archetype: ArchetypeEnum.System, cancellationToken: TestContext.Current.CancellationToken);
 
-        var updatedCount = await _storage.CountMemoriesWithoutMetadataEmbeddings();
+        var updatedCount = await _storage.CountMemoriesWithoutMetadataEmbeddings(cancellationToken: TestContext.Current.CancellationToken);
 
         // System memory should not increase the count
         Assert.Equal(initialCount, updatedCount);

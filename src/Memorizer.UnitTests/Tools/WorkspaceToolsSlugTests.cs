@@ -1,5 +1,4 @@
 using Memorizer.Models;
-using Memorizer.Models.ValueTypes;
 using Microsoft.Extensions.Logging.Abstractions;
 using PostgMem.Tools;
 
@@ -23,7 +22,7 @@ public class WorkspaceToolsSlugTests
         var tools = CreateTools(fakeStorage);
 
         // Act
-        var result = await tools.GetWorkspace(slug: "engineering");
+        var result = await tools.GetWorkspace(slug: "engineering", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("Workspace: Engineering", result);
@@ -45,7 +44,7 @@ public class WorkspaceToolsSlugTests
         var tools = CreateTools(fakeStorage);
 
         // Act
-        var result = await tools.GetWorkspace(slug: "backend", parentWorkspaceId: parentId.Value.ToString());
+        var result = await tools.GetWorkspace(slug: "backend", parentWorkspaceId: parentId.Value.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("Workspace: Backend", result);
@@ -65,7 +64,7 @@ public class WorkspaceToolsSlugTests
         var tools = CreateTools(fakeStorage);
 
         // Act: caller passes a mixed-case, padded slug
-        var result = await tools.GetWorkspace(slug: "  Engineering  ");
+        var result = await tools.GetWorkspace(slug: "  Engineering  ", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert: storage is queried with the canonical lowercase, trimmed slug
         Assert.Equal("engineering", fakeStorage.LastSlugQueried);
@@ -83,7 +82,7 @@ public class WorkspaceToolsSlugTests
         var tools = CreateTools(fakeStorage);
 
         // Act
-        var result = await tools.GetWorkspace(slug: "missing");
+        var result = await tools.GetWorkspace(slug: "missing", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("Workspace with slug 'missing' not found among root workspaces.", result);
@@ -101,7 +100,7 @@ public class WorkspaceToolsSlugTests
         var tools = CreateTools(fakeStorage);
 
         // Act
-        var result = await tools.GetWorkspace(slug: "missing", parentWorkspaceId: parentId.Value.ToString());
+        var result = await tools.GetWorkspace(slug: "missing", parentWorkspaceId: parentId.Value.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains($"Workspace with slug 'missing' not found under parent {parentId.Value}", result);
@@ -115,7 +114,7 @@ public class WorkspaceToolsSlugTests
         var tools = CreateTools(fakeStorage);
 
         // Act
-        var result = await tools.GetWorkspace(slug: "engineering", query: "eng");
+        var result = await tools.GetWorkspace(slug: "engineering", query: "eng", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert: query path was taken, so slug lookup was never invoked
         Assert.Null(fakeStorage.LastSlugQueried);

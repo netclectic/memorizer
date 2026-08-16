@@ -1,12 +1,10 @@
 using Memorizer.Extensions;
 using Memorizer.Models;
-using Memorizer.Models.Enums;
 using Memorizer.Models.ValueTypes;
 using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -72,28 +70,28 @@ public class KnowledgeGraphIntegrationTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
         var graph = _services.GetRequiredService<IGraphService>();
 
-        var workspace = await storage.CreateWorkspaceAsync("Graph Root", "groot");
-        var project = await storage.CreateProjectAsync(workspace.Id, "Graph Project", "gp");
+        var workspace = await storage.CreateWorkspaceAsync("Graph Root", "groot", cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "Graph Project", "gp", cancellationToken: TestContext.Current.CancellationToken);
 
         var created = new List<MemoryId>();
         try
         {
             var m1 = await storage.StoreMemory(
                 "reference", "graph node one", "test", new[] { "g1" },
-                new Confidence(1.0), "Graph One", owner: MemoryOwner.ForWorkspace(workspace.Id));
+                new Confidence(1.0), "Graph One", owner: MemoryOwner.ForWorkspace(workspace.Id), cancellationToken: TestContext.Current.CancellationToken);
             var m2 = await storage.StoreMemory(
                 "reference", "graph node two", "test", new[] { "g2" },
-                new Confidence(1.0), "Graph Two", owner: MemoryOwner.ForProject(project.Id));
+                new Confidence(1.0), "Graph Two", owner: MemoryOwner.ForProject(project.Id), cancellationToken: TestContext.Current.CancellationToken);
             var m3 = await storage.StoreMemory(
                 "reference", "graph node three", "test", new[] { "g3" },
-                new Confidence(1.0), "Graph Three"); // unfiled
+                new Confidence(1.0), "Graph Three", cancellationToken: TestContext.Current.CancellationToken); // unfiled
             created.AddRange(new[] { m1.Id, m2.Id, m3.Id });
 
-            await storage.CreateRelationship(m1.Id, m2.Id, "related-to");
-            await storage.CreateRelationship(m2.Id, m3.Id, "explains");
+            await storage.CreateRelationship(m1.Id, m2.Id, "related-to", cancellationToken: TestContext.Current.CancellationToken);
+            await storage.CreateRelationship(m2.Id, m3.Id, "explains", cancellationToken: TestContext.Current.CancellationToken);
 
             // Act
-            var global = await graph.GetKnowledgeGraphAsync();
+            var global = await graph.GetKnowledgeGraphAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Contains(global.Nodes, n => n.Id == m1.Id.Value);
@@ -105,9 +103,9 @@ public class KnowledgeGraphIntegrationTests : IDisposable
         finally
         {
             foreach (var id in created)
-                await storage.Delete(id);
-            await storage.DeleteProjectAsync(project.Id);
-            await storage.DeleteWorkspaceAsync(workspace.Id);
+                await storage.Delete(id, TestContext.Current.CancellationToken);
+            await storage.DeleteProjectAsync(project.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -118,28 +116,28 @@ public class KnowledgeGraphIntegrationTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
         var graph = _services.GetRequiredService<IGraphService>();
 
-        var workspace = await storage.CreateWorkspaceAsync("Graph Root", "groot");
-        var project = await storage.CreateProjectAsync(workspace.Id, "Graph Project", "gp");
+        var workspace = await storage.CreateWorkspaceAsync("Graph Root", "groot", cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "Graph Project", "gp", cancellationToken: TestContext.Current.CancellationToken);
 
         var created = new List<MemoryId>();
         try
         {
             var m1 = await storage.StoreMemory(
                 "reference", "graph node one", "test", new[] { "g1" },
-                new Confidence(1.0), "Graph One", owner: MemoryOwner.ForWorkspace(workspace.Id));
+                new Confidence(1.0), "Graph One", owner: MemoryOwner.ForWorkspace(workspace.Id), cancellationToken: TestContext.Current.CancellationToken);
             var m2 = await storage.StoreMemory(
                 "reference", "graph node two", "test", new[] { "g2" },
-                new Confidence(1.0), "Graph Two", owner: MemoryOwner.ForProject(project.Id));
+                new Confidence(1.0), "Graph Two", owner: MemoryOwner.ForProject(project.Id), cancellationToken: TestContext.Current.CancellationToken);
             var m3 = await storage.StoreMemory(
                 "reference", "graph node three", "test", new[] { "g3" },
-                new Confidence(1.0), "Graph Three"); // unfiled, outside scope
+                new Confidence(1.0), "Graph Three", cancellationToken: TestContext.Current.CancellationToken); // unfiled, outside scope
             created.AddRange(new[] { m1.Id, m2.Id, m3.Id });
 
-            await storage.CreateRelationship(m1.Id, m2.Id, "related-to");
-            await storage.CreateRelationship(m2.Id, m3.Id, "explains");
+            await storage.CreateRelationship(m1.Id, m2.Id, "related-to", cancellationToken: TestContext.Current.CancellationToken);
+            await storage.CreateRelationship(m2.Id, m3.Id, "explains", cancellationToken: TestContext.Current.CancellationToken);
 
             // Act - workspace scope covers the workspace + its projects, not unfiled
-            var scoped = await graph.GetKnowledgeGraphAsync(workspaceId: workspace.Id);
+            var scoped = await graph.GetKnowledgeGraphAsync(workspaceId: workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Contains(scoped.Nodes, n => n.Id == m1.Id.Value);
@@ -151,9 +149,9 @@ public class KnowledgeGraphIntegrationTests : IDisposable
         finally
         {
             foreach (var id in created)
-                await storage.Delete(id);
-            await storage.DeleteProjectAsync(project.Id);
-            await storage.DeleteWorkspaceAsync(workspace.Id);
+                await storage.Delete(id, TestContext.Current.CancellationToken);
+            await storage.DeleteProjectAsync(project.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
         }
     }
 }

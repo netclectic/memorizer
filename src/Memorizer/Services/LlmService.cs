@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using Memorizer.Models;
 using Memorizer.Settings;
 using OllamaSharp;
 

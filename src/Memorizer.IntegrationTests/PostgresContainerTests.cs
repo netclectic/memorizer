@@ -9,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 using PostgMem.Tools;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -43,12 +42,12 @@ public class IntegrationTests : TestKit
                 ["Embeddings:Timeout"] = TimeSpan.FromMinutes(1).ToString()
             })
             .Build();
-        
+
         services.AddSingleton<IConfiguration>(config);
 
         // AddPostgMem() handles all HTTP client configurations properly
         services.AddMemorizer();
-        
+
         // Add MemoryTools for integration tests
         services.AddScoped<MemoryTools>();
     }
@@ -65,12 +64,12 @@ public class IntegrationTests : TestKit
     public async Task CanConnectAndUsePgvector()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(TestContext.Current.CancellationToken);
         await using var cmd = conn.CreateCommand();
         // Create a vector with default dimensions (384) - matches database schema
         var vector = string.Join(",", Enumerable.Repeat("0", 384));
         cmd.CommandText = $"INSERT INTO memories (id, type_legacy, content, text, source, embedding, tags, confidence, created_at, updated_at) VALUES (gen_random_uuid(), 'test', '{{}}'::jsonb, 'test text', 'test', '[{vector}]'::vector, ARRAY['tag'], 1.0, now(), now()) RETURNING id;";
-        var id = await cmd.ExecuteScalarAsync();
+        var id = await cmd.ExecuteScalarAsync(TestContext.Current.CancellationToken);
         Assert.NotNull(id);
     }
 
@@ -88,11 +87,12 @@ public class IntegrationTests : TestKit
             "test",
             new[] { "test" },
             new Confidence(1.0),
-            "Test Title"
+            "Test Title",
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Test retrieving the memory
-        var retrieved = await _storage.Get(memory.Id, CancellationToken.None);
+        var retrieved = await _storage.Get(memory.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(retrieved);
         Assert.Equal(memory.Id, retrieved.Id);
     }
@@ -110,10 +110,11 @@ public class IntegrationTests : TestKit
             "test",
             new[] { "test" },
             new Confidence(1.0),
-            title
+            title,
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
-        var retrieved = await _storage.Get(memory.Id, CancellationToken.None);
+        var retrieved = await _storage.Get(memory.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(retrieved);
         Assert.Equal(memory.Id, retrieved.Id);
         Assert.Equal(title, retrieved.Title);
@@ -133,7 +134,8 @@ public class IntegrationTests : TestKit
                 "test",
                 new[] { "test" },
                 new Confidence(1.0),
-                "Default Title"
+                "Default Title",
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
         Assert.NotNull(memory);
@@ -157,7 +159,7 @@ public class IntegrationTests : TestKit
 
         foreach (var (type, content, tags) in memories)
         {
-            await _storage.StoreMemory(type, content, "test", tags, new Confidence(1.0), title: type);
+            await _storage.StoreMemory(type, content, "test", tags, new Confidence(1.0), title: type, cancellationToken: TestContext.Current.CancellationToken);
         }
 
         // Act
@@ -165,7 +167,8 @@ public class IntegrationTests : TestKit
             "What color is the sky?",
             limit: 1,
             minSimilarity: new SimilarityScore(0.5),
-            filterTags: new[] { "nature" }
+            filterTags: new[] { "nature" },
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Assert
@@ -187,12 +190,13 @@ public class IntegrationTests : TestKit
             "test",
             new[] { "temporary" },
             new Confidence(1.0),
-            "Test Title"
+            "Test Title",
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Act
-        var deleteResult = await _storage.Delete(memory.Id);
-        var retrievedMemory = await _storage.Get(memory.Id);
+        var deleteResult = await _storage.Delete(memory.Id, TestContext.Current.CancellationToken);
+        var retrievedMemory = await _storage.Get(memory.Id, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(deleteResult);
@@ -203,14 +207,14 @@ public class IntegrationTests : TestKit
     public async Task SchemaVersionTable_IsPopulated_AfterMigration()
     {
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(TestContext.Current.CancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT version, name, applied_at FROM schema_version ORDER BY version";
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(TestContext.Current.CancellationToken);
         var found = false;
         var versions = new List<int>();
         var names = new List<string>();
-        while (await reader.ReadAsync())
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
         {
             found = true;
             var version = reader.GetInt32(0);
@@ -233,11 +237,11 @@ public class IntegrationTests : TestKit
     {
         _storage = Host.Services.GetRequiredService<IStorage>();
         // Store multiple memories
-        var m1 = await _storage.StoreMemory("type1", "A", "src1", new[] { "tag1" }, new Confidence(1.0), "Memory 1");
-        var m2 = await _storage.StoreMemory("type2", "B", "src2", new[] { "tag2" }, new Confidence(1.0), "Memory 2");
-        var m3 = await _storage.StoreMemory("type3", "C", "src3", new[] { "tag3" }, new Confidence(1.0), "Memory 3");
+        var m1 = await _storage.StoreMemory("type1", "A", "src1", new[] { "tag1" }, new Confidence(1.0), "Memory 1", cancellationToken: TestContext.Current.CancellationToken);
+        var m2 = await _storage.StoreMemory("type2", "B", "src2", new[] { "tag2" }, new Confidence(1.0), "Memory 2", cancellationToken: TestContext.Current.CancellationToken);
+        var m3 = await _storage.StoreMemory("type3", "C", "src3", new[] { "tag3" }, new Confidence(1.0), "Memory 3", cancellationToken: TestContext.Current.CancellationToken);
         // Fetch by ids
-        var results = await _storage.GetMany(new[] { m1.Id, m3.Id }, CancellationToken.None);
+        var results = await _storage.GetMany(new[] { m1.Id, m3.Id }, TestContext.Current.CancellationToken);
         Assert.Equal(2, results.Count);
         Assert.Contains(results, m => m.Id == m1.Id);
         Assert.Contains(results, m => m.Id == m3.Id);
@@ -248,15 +252,15 @@ public class IntegrationTests : TestKit
     {
         _storage = Host.Services.GetRequiredService<IStorage>();
         // Store two memories
-        var m1 = await _storage.StoreMemory("type1", "Parent", "src1", new[] { "tag1" }, new Confidence(1.0), "Parent Memory");
-        var m2 = await _storage.StoreMemory("type2", "Child", "src2", new[] { "tag2" }, new Confidence(1.0), "Child Memory");
+        var m1 = await _storage.StoreMemory("type1", "Parent", "src1", new[] { "tag1" }, new Confidence(1.0), "Parent Memory", cancellationToken: TestContext.Current.CancellationToken);
+        var m2 = await _storage.StoreMemory("type2", "Child", "src2", new[] { "tag2" }, new Confidence(1.0), "Child Memory", cancellationToken: TestContext.Current.CancellationToken);
         // Create relationship
-        var rel = await _storage.CreateRelationship(m1.Id, m2.Id, "Parent", CancellationToken.None);
+        var rel = await _storage.CreateRelationship(m1.Id, m2.Id, "Parent", TestContext.Current.CancellationToken);
         Assert.Equal(m1.Id, rel.FromMemoryId);
         Assert.Equal(m2.Id, rel.ToMemoryId);
         Assert.Equal("Parent", rel.Type);
         // Get relationships
-        var rels = await _storage.GetRelationships(m1.Id, "Parent", includeArchivedTargets: false, CancellationToken.None);
+        var rels = await _storage.GetRelationships(m1.Id, "Parent", includeArchivedTargets: false, TestContext.Current.CancellationToken);
         Assert.Single(rels);
         Assert.Equal(rel.Id, rels[0].Id);
         Assert.Equal(m2.Id, rels[0].ToMemoryId);
@@ -270,14 +274,14 @@ public class IntegrationTests : TestKit
     {
         _storage = Host.Services.GetRequiredService<IStorage>();
         // Store a related memory first
-        var related = await _storage.StoreMemory("typeX", "Related", "srcX", new[] { "tagX" }, new Confidence(1.0), "Related Memory");
+        var related = await _storage.StoreMemory("typeX", "Related", "srcX", new[] { "tagX" }, new Confidence(1.0), "Related Memory", cancellationToken: TestContext.Current.CancellationToken);
         // Store a new memory and create a relationship in one call
-        var memory = await _storage.StoreMemory("typeY", "Main", "srcY", new[] { "tagY" }, new Confidence(1.0), "Main Memory", related.Id, "Reference");
+        var memory = await _storage.StoreMemory("typeY", "Main", "srcY", new[] { "tagY" }, new Confidence(1.0), "Main Memory", related.Id, "Reference", cancellationToken: TestContext.Current.CancellationToken);
         // Check the memory exists
-        var retrieved = await _storage.Get(memory.Id);
+        var retrieved = await _storage.Get(memory.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(retrieved);
         // Check the relationship exists
-        var rels = await _storage.GetRelationships(memory.Id, "Reference");
+        var rels = await _storage.GetRelationships(memory.Id, "Reference", includeArchivedTargets: false, TestContext.Current.CancellationToken);
         Assert.Single(rels);
         Assert.Equal(memory.Id, rels[0].FromMemoryId);
         Assert.Equal(related.Id, rels[0].ToMemoryId);
@@ -292,13 +296,13 @@ public class IntegrationTests : TestKit
     {
         _storage = Host.Services.GetRequiredService<IStorage>();
         // Store two memories
-        var m1 = await _storage.StoreMemory("typeA", "Alpha", "srcA", new[] { "tagA" }, new Confidence(1.0), "Alpha Memory");
-        var m2 = await _storage.StoreMemory("typeB", "Beta", "srcB", new[] { "tagB" }, new Confidence(1.0), "Beta Memory");
+        var m1 = await _storage.StoreMemory("typeA", "Alpha", "srcA", new[] { "tagA" }, new Confidence(1.0), "Alpha Memory", cancellationToken: TestContext.Current.CancellationToken);
+        var m2 = await _storage.StoreMemory("typeB", "Beta", "srcB", new[] { "tagB" }, new Confidence(1.0), "Beta Memory", cancellationToken: TestContext.Current.CancellationToken);
         // Create relationship
-        var rel = await _storage.CreateRelationship(m1.Id, m2.Id, "Parent", CancellationToken.None);
+        var rel = await _storage.CreateRelationship(m1.Id, m2.Id, "Parent", TestContext.Current.CancellationToken);
 
         // 1. Direct relationship fetch
-        var rels = await _storage.GetRelationships(m1.Id, null, includeArchivedTargets: false, CancellationToken.None);
+        var rels = await _storage.GetRelationships(m1.Id, null, includeArchivedTargets: false, TestContext.Current.CancellationToken);
         Assert.Contains(rels, r => r.Id == rel.Id && r.Type == "Parent" && !string.IsNullOrWhiteSpace(r.Type));
         // New: Check related memory title/type
         var rel1 = rels.First(r => r.Id == rel.Id);
@@ -306,7 +310,7 @@ public class IntegrationTests : TestKit
         Assert.Equal(m2.Type, rel1.RelatedMemoryType);
 
         // 2. Relationship via Memory.Relationships (Get)
-        var mem = await _storage.Get(m1.Id, CancellationToken.None);
+        var mem = await _storage.Get(m1.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(mem);
         Assert.NotNull(mem.Relationships);
         Assert.Contains(mem.Relationships!, r => r.Id == rel.Id && r.Type == "Parent" && !string.IsNullOrWhiteSpace(r.Type));
@@ -316,7 +320,7 @@ public class IntegrationTests : TestKit
         Assert.Equal(m2.Type, rel2.RelatedMemoryType);
 
         // 3. Relationship via Memory.Relationships (GetMany)
-        var mems = await _storage.GetMany(new[] { m1.Id }, CancellationToken.None);
+        var mems = await _storage.GetMany(new[] { m1.Id }, TestContext.Current.CancellationToken);
         Assert.Single(mems);
         Assert.NotNull(mems[0].Relationships);
         Assert.Contains(mems[0].Relationships!, r => r.Id == rel.Id && r.Type == "Parent" && !string.IsNullOrWhiteSpace(r.Type));
@@ -332,7 +336,7 @@ public class IntegrationTests : TestKit
         // Arrange
         var memoryTools = Host.Services.GetRequiredService<MemoryTools>();
         var storage = Host.Services.GetRequiredService<IStorage>();
-        
+
         // Create large content that should trigger chunking
         var largeContent = """
         This is a comprehensive guide to software engineering best practices.
@@ -353,7 +357,7 @@ public class IntegrationTests : TestKit
         Maintain up-to-date documentation including API documentation, architectural decisions,
         and setup instructions for new team members.
         """;
-        
+
         // Act
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var result = await memoryTools.Store(
@@ -361,16 +365,17 @@ public class IntegrationTests : TestKit
             text: largeContent,
             source: "test",
             tags: new[] { "best-practices", "software-engineering" },
-            title: "Software Engineering Best Practices"
+            title: "Software Engineering Best Practices",
+            cancellationToken: TestContext.Current.CancellationToken
         );
         stopwatch.Stop();
-        
+
         // Assert
         Assert.NotNull(result);
         Assert.Contains("Memory stored successfully", result);
-        
+
         // Should complete quickly (under 5 seconds for immediate storage)
-        Assert.True(stopwatch.ElapsedMilliseconds < 5000, 
+        Assert.True(stopwatch.ElapsedMilliseconds < 5000,
             $"Store operation took {stopwatch.ElapsedMilliseconds}ms, expected < 5000ms");
     }
 
@@ -379,10 +384,10 @@ public class IntegrationTests : TestKit
     {
         // This test validates that GetMany works correctly for retrieving chunks
         // and that the relationship system properly links containers to chunks
-        
+
         // Arrange
         var storage = Host.Services.GetRequiredService<IStorage>();
-        
+
         // Create a container memory
         var containerMemory = await storage.StoreMemory(
             type: "reference-container",
@@ -392,10 +397,10 @@ public class IntegrationTests : TestKit
             confidence: new Confidence(1.0),
             relatedTo: null,
             relationshipType: null,
-            cancellationToken: CancellationToken.None,
+            cancellationToken: TestContext.Current.CancellationToken,
             title: "Test Container"
         );
-        
+
         // Create chunk memories with relationships
         var chunk1 = await storage.StoreMemory(
             type: "reference-chunk",
@@ -405,10 +410,10 @@ public class IntegrationTests : TestKit
             confidence: new Confidence(1.0),
             relatedTo: containerMemory.Id,
             relationshipType: "chunk-of",
-            cancellationToken: CancellationToken.None,
+            cancellationToken: TestContext.Current.CancellationToken,
             title: "Chunk 1 - Python"
         );
-        
+
         var chunk2 = await storage.StoreMemory(
             type: "reference-chunk",
             content: "Second chunk content about JavaScript development.",
@@ -417,31 +422,31 @@ public class IntegrationTests : TestKit
             confidence: new Confidence(1.0),
             relatedTo: containerMemory.Id,
             relationshipType: "chunk-of",
-            cancellationToken: CancellationToken.None,
+            cancellationToken: TestContext.Current.CancellationToken,
             title: "Chunk 2 - JavaScript"
         );
-        
+
         // Act - Get the chunks and verify they have relationships to the container
-        var chunk1Retrieved = await storage.Get(chunk1.Id);
-        var chunk2Retrieved = await storage.Get(chunk2.Id);
-        
+        var chunk1Retrieved = await storage.Get(chunk1.Id, TestContext.Current.CancellationToken);
+        var chunk2Retrieved = await storage.Get(chunk2.Id, TestContext.Current.CancellationToken);
+
         Assert.NotNull(chunk1Retrieved);
         Assert.NotNull(chunk2Retrieved);
         Assert.NotNull(chunk1Retrieved.Relationships);
         Assert.NotNull(chunk2Retrieved.Relationships);
-        
+
         // Verify chunk relationships point to container
         Assert.Contains(chunk1Retrieved.Relationships, r => r.Type == "chunk-of" && r.ToMemoryId == containerMemory.Id);
         Assert.Contains(chunk2Retrieved.Relationships, r => r.Type == "chunk-of" && r.ToMemoryId == containerMemory.Id);
-        
+
         // Use GetMany to retrieve all chunks
-        var chunks = await storage.GetMany(new[] { chunk1.Id, chunk2.Id });
-        
+        var chunks = await storage.GetMany(new[] { chunk1.Id, chunk2.Id }, TestContext.Current.CancellationToken);
+
         // Assert
         Assert.Equal(2, chunks.Count);
         Assert.Contains(chunks, c => c.Id == chunk1.Id && c.Title == "Chunk 1 - Python");
         Assert.Contains(chunks, c => c.Id == chunk2.Id && c.Title == "Chunk 2 - JavaScript");
-        Assert.All(chunks, chunk => 
+        Assert.All(chunks, chunk =>
         {
             Assert.Contains("chunk", chunk.Type);
             Assert.Contains("chunk", chunk.Tags ?? []);
@@ -453,7 +458,7 @@ public class IntegrationTests : TestKit
     public async Task Stress_Test_Memory_Relationships_Should_Not_Leak_Connections()
     {
         _storage = Host.Services.GetRequiredService<IStorage>();
-        
+
         // Create a chain of interconnected memories to test for infinite recursion
         var memories = new List<Memory>();
         for (int i = 0; i < 10; i++)
@@ -464,25 +469,26 @@ public class IntegrationTests : TestKit
                 $"source_{i}",
                 new[] { $"tag_{i}" },
                 new Confidence(1.0),
-                title: $"Memory {i}");
+                title: $"Memory {i}",
+                cancellationToken: TestContext.Current.CancellationToken);
             memories.Add(memory);
         }
-        
+
         // Create circular relationships (A->B, B->C, C->A pattern)
         for (int i = 0; i < memories.Count; i++)
         {
             var fromMemory = memories[i];
             var toMemory = memories[(i + 1) % memories.Count]; // Circular reference
-            await _storage.CreateRelationship(fromMemory.Id, toMemory.Id, "references", CancellationToken.None);
+            await _storage.CreateRelationship(fromMemory.Id, toMemory.Id, "references", TestContext.Current.CancellationToken);
         }
-        
+
         // Add some bi-directional relationships for more complexity
         for (int i = 0; i < 5; i++)
         {
-            await _storage.CreateRelationship(memories[i].Id, memories[i + 5].Id, "related", CancellationToken.None);
-            await _storage.CreateRelationship(memories[i + 5].Id, memories[i].Id, "related", CancellationToken.None);
+            await _storage.CreateRelationship(memories[i].Id, memories[i + 5].Id, "related", TestContext.Current.CancellationToken);
+            await _storage.CreateRelationship(memories[i + 5].Id, memories[i].Id, "related", TestContext.Current.CancellationToken);
         }
-        
+
         // Stress test: rapidly call GetMany multiple times concurrently
         var tasks = new List<Task>();
         for (int i = 0; i < 20; i++)
@@ -492,16 +498,16 @@ public class IntegrationTests : TestKit
             {
                 for (int j = 0; j < 5; j++)
                 {
-                    var result = await _storage.GetMany(memoryIds, CancellationToken.None);
+                    var result = await _storage.GetMany(memoryIds, TestContext.Current.CancellationToken);
                     Assert.Equal(5, result.Count);
-                    
+
                     // Verify relationships are loaded without infinite recursion
                     foreach (var memory in result)
                     {
                         Assert.NotNull(memory.Relationships);
                         // Each memory should have at least one relationship
                         Assert.NotEmpty(memory.Relationships);
-                        
+
                         // Verify relationship data is populated correctly
                         foreach (var rel in memory.Relationships)
                         {
@@ -513,14 +519,14 @@ public class IntegrationTests : TestKit
                         }
                     }
                 }
-            }));
+            }, TestContext.Current.CancellationToken));
         }
-        
+
         // Wait for all tasks to complete - should not hang due to infinite recursion
-        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30));
+        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
         var completedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
-        
-        Assert.True(completedTask != timeoutTask, 
+
+        Assert.True(completedTask != timeoutTask,
             "Stress test timed out - possible infinite recursion or connection leak");
     }
 
@@ -528,9 +534,9 @@ public class IntegrationTests : TestKit
     public async Task Stress_Test_Single_Memory_Relationships_Should_Be_Efficient()
     {
         _storage = Host.Services.GetRequiredService<IStorage>();
-        
+
         // Create a hub memory with many relationships
-        var hubMemory = await _storage.StoreMemory("hub", "Hub memory", "test", new[] { "hub" }, new Confidence(1.0), "Hub");
+        var hubMemory = await _storage.StoreMemory("hub", "Hub memory", "test", new[] { "hub" }, new Confidence(1.0), "Hub", cancellationToken: TestContext.Current.CancellationToken);
 
         // Create many related memories
         var relatedMemories = new List<Memory>();
@@ -542,26 +548,27 @@ public class IntegrationTests : TestKit
                 "test",
                 new[] { "spoke" },
                 new Confidence(1.0),
-                title: $"Spoke {i}");
+                title: $"Spoke {i}",
+                cancellationToken: TestContext.Current.CancellationToken);
             relatedMemories.Add(memory);
-            
+
             // Create relationship from hub to spoke
-            await _storage.CreateRelationship(hubMemory.Id, memory.Id, "contains", CancellationToken.None);
+            await _storage.CreateRelationship(hubMemory.Id, memory.Id, "contains", TestContext.Current.CancellationToken);
         }
-        
+
         // Test: Get the hub memory (should load all 50 relationships efficiently)
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var retrievedHub = await _storage.Get(hubMemory.Id, CancellationToken.None);
+        var retrievedHub = await _storage.Get(hubMemory.Id, TestContext.Current.CancellationToken);
         stopwatch.Stop();
-        
+
         Assert.NotNull(retrievedHub);
         Assert.NotNull(retrievedHub.Relationships);
         Assert.Equal(50, retrievedHub.Relationships.Count);
-        
+
         // Should complete quickly (under 2 seconds for 50 relationships)
-        Assert.True(stopwatch.ElapsedMilliseconds < 2000, 
+        Assert.True(stopwatch.ElapsedMilliseconds < 2000,
             $"Loading 50 relationships took {stopwatch.ElapsedMilliseconds}ms, expected < 2000ms");
-        
+
         // Verify all relationships have proper data
         foreach (var rel in retrievedHub.Relationships)
         {
@@ -577,12 +584,12 @@ public class IntegrationTests : TestKit
     public async Task Connection_Pool_Should_Remain_Stable_Under_Load()
     {
         _storage = Host.Services.GetRequiredService<IStorage>();
-        
+
         // Create test data
-        var memory1 = await _storage.StoreMemory("test", "Memory 1", "test", new[] { "load_test" }, new Confidence(1.0), "Memory 1");
-        var memory2 = await _storage.StoreMemory("test", "Memory 2", "test", new[] { "load_test" }, new Confidence(1.0), "Memory 2");
-        await _storage.CreateRelationship(memory1.Id, memory2.Id, "test_rel", CancellationToken.None);
-        
+        var memory1 = await _storage.StoreMemory("test", "Memory 1", "test", new[] { "load_test" }, new Confidence(1.0), "Memory 1", cancellationToken: TestContext.Current.CancellationToken);
+        var memory2 = await _storage.StoreMemory("test", "Memory 2", "test", new[] { "load_test" }, new Confidence(1.0), "Memory 2", cancellationToken: TestContext.Current.CancellationToken);
+        await _storage.CreateRelationship(memory1.Id, memory2.Id, "test_rel", cancellationToken: TestContext.Current.CancellationToken);
+
         // Rapid-fire operations that used to cause connection leaks
         var operations = new List<Task>();
         for (int i = 0; i < 100; i++)
@@ -590,26 +597,26 @@ public class IntegrationTests : TestKit
             operations.Add(Task.Run(async () =>
             {
                 // Mix of operations that involve relationship loading
-                var memories = await _storage.GetMany(new[] { memory1.Id, memory2.Id }, CancellationToken.None);
-                var relationships = await _storage.GetRelationships(memory1.Id, null, includeArchivedTargets: false, CancellationToken.None);
-                var singleMemory = await _storage.Get(memory1.Id, CancellationToken.None);
-                
+                var memories = await _storage.GetMany(new[] { memory1.Id, memory2.Id }, cancellationToken: TestContext.Current.CancellationToken);
+                var relationships = await _storage.GetRelationships(memory1.Id, null, includeArchivedTargets: false, cancellationToken: TestContext.Current.CancellationToken);
+                var singleMemory = await _storage.Get(memory1.Id, cancellationToken: TestContext.Current.CancellationToken);
+
                 // Verify results
                 Assert.Equal(2, memories.Count);
                 Assert.NotEmpty(relationships);
                 Assert.NotNull(singleMemory);
-            }));
+            }, cancellationToken: TestContext.Current.CancellationToken));
         }
-        
+
         // Should complete without "too many clients" error
-        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30));
+        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
         var completedTask = await Task.WhenAny(Task.WhenAll(operations), timeoutTask);
-        
-        Assert.True(completedTask != timeoutTask, 
+
+        Assert.True(completedTask != timeoutTask,
             "Load test timed out - possible connection pool exhaustion");
-        
+
         // Verify we can still perform operations after the load test
-        var finalCheck = await _storage.Get(memory1.Id, CancellationToken.None);
+        var finalCheck = await _storage.Get(memory1.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(finalCheck);
     }
 }

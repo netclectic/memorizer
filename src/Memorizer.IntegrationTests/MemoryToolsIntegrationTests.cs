@@ -6,9 +6,7 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using PostgMem.Tools;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -93,7 +91,7 @@ public class MemoryToolsIntegrationTests : IDisposable
             "user",
             new[] { "todo", "daily-tasks" },
             new Confidence(1.0),
-            "Daily To-Do List");
+            "Daily To-Do List", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Created to-do list memory: {memory.Id}");
         _output.WriteLine($"Original content:\n{memory.Text}");
@@ -103,7 +101,7 @@ public class MemoryToolsIntegrationTests : IDisposable
             memory.Id.Value,
             "- [ ] Write integration tests",
             "- [x] Write integration tests",
-            replace_all: false);
+            replace_all: false, cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Edit result: {result}");
 
@@ -112,7 +110,7 @@ public class MemoryToolsIntegrationTests : IDisposable
         Assert.Contains("1 replacement(s)", result);
 
         // Verify the change persisted
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.Contains("- [x] Write integration tests", updatedMemory.Text);
         Assert.Contains("- [ ] Buy groceries", updatedMemory.Text); // Other items unchanged
@@ -141,7 +139,7 @@ Call foo() to start the process.";
             "user",
             new[] { "docs" },
             new Confidence(1.0),
-            "Foo Documentation");
+            "Foo Documentation", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Created memory: {memory.Id}");
 
@@ -150,7 +148,7 @@ Call foo() to start the process.";
             memory.Id.Value,
             "foo",
             "initialize",
-            replace_all: true);
+            replace_all: true, cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Edit result: {result}");
 
@@ -158,7 +156,7 @@ Call foo() to start the process.";
         Assert.Contains("Edit successful", result);
         Assert.Contains("3 replacement(s)", result);
 
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.DoesNotContain("foo", updatedMemory.Text);
         Assert.Contains("initialize", updatedMemory.Text);
@@ -181,20 +179,20 @@ Call foo() to start the process.";
             "user",
             null,
             new Confidence(1.0),
-            "Apple Test");
+            "Apple Test", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Replace without replace_all (defaults to false)
         var result = await tools.Edit(
             memory.Id.Value,
             "apple",
-            "orange");
+            "orange", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Edit result: {result}");
 
         // Assert
         Assert.Contains("1 replacement(s)", result);
 
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.Equal("orange, apple, apple", updatedMemory.Text);
 
@@ -214,13 +212,13 @@ Call foo() to start the process.";
             "user",
             null,
             new Confidence(1.0),
-            "Test Memory");
+            "Test Memory", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Try to replace text that doesn't exist
         var result = await tools.Edit(
             memory.Id.Value,
             "Goodbye World",
-            "New Text");
+            "New Text", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Edit result: {result}");
 
@@ -242,7 +240,8 @@ Call foo() to start the process.";
         var result = await tools.Edit(
             nonExistentId,
             "old text",
-            "new text");
+            "new text",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Edit result: {result}");
 
@@ -272,7 +271,7 @@ that should be replaced.
             "user",
             null,
             new Confidence(1.0),
-            "Multi-line Test");
+            "Multi-line Test", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Replace multi-line section
         var result = await tools.Edit(
@@ -280,14 +279,14 @@ that should be replaced.
             @"Old paragraph here
 with multiple lines
 that should be replaced.",
-            "New single line paragraph.");
+            "New single line paragraph.", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Edit result: {result}");
 
         // Assert
         Assert.Contains("Edit successful", result);
 
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.Contains("# Header", updatedMemory.Text);
         Assert.Contains("New single line paragraph.", updatedMemory.Text);
@@ -310,19 +309,19 @@ that should be replaced.",
             "user",
             null,
             new Confidence(1.0),
-            "Version Test");
+            "Version Test", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Make multiple edits
-        await tools.Edit(memory.Id.Value, "Version 1", "Version 2");
-        await tools.Edit(memory.Id.Value, "Version 2", "Version 3");
-        await tools.Edit(memory.Id.Value, "Version 3", "Version 4");
+        await tools.Edit(memory.Id.Value, "Version 1", "Version 2", cancellationToken: TestContext.Current.CancellationToken);
+        await tools.Edit(memory.Id.Value, "Version 2", "Version 3", cancellationToken: TestContext.Current.CancellationToken);
+        await tools.Edit(memory.Id.Value, "Version 3", "Version 4", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - Check version history
         // Each edit creates a snapshot of the PREVIOUS state, so 3 edits = 3 version snapshots
-        var versions = await storage.GetVersionHistory(memory.Id, 10);
+        var versions = await storage.GetVersionHistory(memory.Id, 10, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(3, versions.Count); // 3 edits create 3 snapshots of previous states
 
-        var finalMemory = await storage.Get(memory.Id);
+        var finalMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(finalMemory);
         Assert.Equal("Version 4 content", finalMemory.Text);
         Assert.Equal(new VersionNumber(4), finalMemory.CurrentVersion); // current_version is incremented on each edit
@@ -344,13 +343,13 @@ that should be replaced.",
             "user",
             null,
             new Confidence(1.0),
-            "Identity Test");
+            "Identity Test", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Try to replace with identical text
         var result = await tools.Edit(
             memory.Id.Value,
             "Same",
-            "Same");
+            "Same", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Edit result: {result}");
 
@@ -358,7 +357,7 @@ that should be replaced.",
         Assert.Contains("No changes made", result);
 
         // Version should not increment
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.Equal(new VersionNumber(1), updatedMemory.CurrentVersion);
     }
@@ -380,12 +379,12 @@ that should be replaced.",
             "user",
             null,
             new Confidence(1.0),
-            "Original Title");
+            "Original Title", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
         var result = await tools.UpdateMetadata(
             memory.Id.Value,
-            title: "Updated Title");
+            title: "Updated Title", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"UpdateMetadata result: {result}");
 
@@ -393,7 +392,7 @@ that should be replaced.",
         Assert.Contains("Metadata updated successfully", result);
         Assert.Contains("title='Updated Title'", result);
 
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.Equal("Updated Title", updatedMemory.Title);
         Assert.Equal("Content stays the same", updatedMemory.Text); // Content unchanged
@@ -413,12 +412,12 @@ that should be replaced.",
             "user",
             new[] { "old-tag" },
             new Confidence(1.0),
-            "Tag Test");
+            "Tag Test", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
         var result = await tools.UpdateMetadata(
             memory.Id.Value,
-            tags: new[] { "new-tag-1", "new-tag-2" });
+            tags: new[] { "new-tag-1", "new-tag-2" }, cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"UpdateMetadata result: {result}");
 
@@ -426,7 +425,7 @@ that should be replaced.",
         Assert.Contains("Metadata updated successfully", result);
         Assert.Contains("tags=", result);
 
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.NotNull(updatedMemory.Tags);
         Assert.Contains("new-tag-1", updatedMemory.Tags);
@@ -447,19 +446,19 @@ that should be replaced.",
             "user",
             null,
             new Confidence(1.0),
-            "Type Test");
+            "Type Test", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
         var result = await tools.UpdateMetadata(
             memory.Id.Value,
-            type: "published");
+            type: "published", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"UpdateMetadata result: {result}");
 
         // Assert
         Assert.Contains("type='published'", result);
 
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.Equal("published", updatedMemory.Type);
     }
@@ -477,19 +476,19 @@ that should be replaced.",
             "user",
             null,
             new Confidence(0.5),
-            "Confidence Test");
+            "Confidence Test", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
         var result = await tools.UpdateMetadata(
             memory.Id.Value,
-            confidence: 0.95);
+            confidence: 0.95, cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"UpdateMetadata result: {result}");
 
         // Assert
         Assert.Contains("confidence=0.95", result);
 
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.Equal(new Confidence(0.95), updatedMemory.Confidence);
     }
@@ -507,7 +506,7 @@ that should be replaced.",
             "user",
             new[] { "initial" },
             new Confidence(0.5),
-            "Initial Title");
+            "Initial Title", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Update everything at once
         var result = await tools.UpdateMetadata(
@@ -515,7 +514,7 @@ that should be replaced.",
             title: "Final Title",
             type: "reference",
             tags: new[] { "final", "tested" },
-            confidence: 1.0);
+            confidence: 1.0, cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"UpdateMetadata result: {result}");
 
@@ -525,7 +524,7 @@ that should be replaced.",
         Assert.Contains("tags=", result);
         Assert.Contains("confidence=1.00", result);
 
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.Equal("Final Title", updatedMemory.Title);
         Assert.Equal("reference", updatedMemory.Type);
@@ -547,17 +546,17 @@ that should be replaced.",
             "user",
             new[] { "critical", "production" },
             new Confidence(0.99),
-            "Important Memory");
+            "Important Memory", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Only update title, everything else should be preserved
         var result = await tools.UpdateMetadata(
             memory.Id.Value,
-            title: "Updated Important Memory");
+            title: "Updated Important Memory", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"UpdateMetadata result: {result}");
 
         // Assert - Other fields preserved
-        var updatedMemory = await storage.Get(memory.Id);
+        var updatedMemory = await storage.Get(memory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(updatedMemory);
         Assert.Equal("Updated Important Memory", updatedMemory.Title);
         Assert.Equal("important-type", updatedMemory.Type);
@@ -578,7 +577,7 @@ that should be replaced.",
         // Act
         var result = await tools.UpdateMetadata(
             nonExistentId,
-            title: "New Title");
+            title: "New Title", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"UpdateMetadata result: {result}");
 
@@ -605,7 +604,8 @@ that should be replaced.",
             source: "integration-test",
             title: "Store Test Memory",
             tags: new[] { "test", "integration" },
-            confidence: 0.95);
+            confidence: 0.95,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Store result: {result}");
 
@@ -618,7 +618,7 @@ that should be replaced.",
         Assert.True(idMatch.Success, "Should contain memory ID");
         var memoryId = Guid.Parse(idMatch.Groups[1].Value);
 
-        var storedMemory = await storage.Get((MemoryId)memoryId);
+        var storedMemory = await storage.Get((MemoryId)memoryId, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(storedMemory);
         Assert.Equal("reference", storedMemory.Type);
         Assert.Equal("This is a test memory created by Store tool", storedMemory.Text);
@@ -644,7 +644,7 @@ that should be replaced.",
             "test",
             null,
             new Confidence(1.0),
-            "Main Concept");
+            "Main Concept", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act - Create related memory with relationship
         var result = await tools.Store(
@@ -653,7 +653,7 @@ that should be replaced.",
             source: "test",
             title: "Concept Example",
             relatedTo: firstMemory.Id.Value.ToString(),
-            relationshipType: "example-of");
+            relationshipType: "example-of", cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Store result: {result}");
 
@@ -665,7 +665,7 @@ that should be replaced.",
         Assert.True(idMatch.Success);
         var newMemoryId = (MemoryId)Guid.Parse(idMatch.Groups[1].Value);
 
-        var newMemory = await storage.Get(newMemoryId);
+        var newMemory = await storage.Get(newMemoryId, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(newMemory);
         Assert.NotNull(newMemory.Relationships);
         Assert.Contains(newMemory.Relationships, r =>
@@ -700,7 +700,7 @@ that should be replaced.",
 - [ ] Code review",
             source: "LLM",
             title: "Sprint 42 Tasks",
-            tags: new[] { "sprint-42", "todo" });
+            tags: new[] { "sprint-42", "todo" }, cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Create result: {createResult}");
         Assert.Contains("Memory stored successfully", createResult);
@@ -718,13 +718,13 @@ that should be replaced.",
 
         foreach (var (oldText, newText) in tasks)
         {
-            var editResult = await tools.Edit(memoryId, oldText, newText);
+            var editResult = await tools.Edit(memoryId, oldText, newText, cancellationToken: TestContext.Current.CancellationToken);
             _output.WriteLine($"Edit '{oldText}' -> {editResult}");
             Assert.Contains("Edit successful", editResult);
         }
 
         // Step 3: Verify final state
-        var finalMemory = await storage.Get((MemoryId)memoryId);
+        var finalMemory = await storage.Get((MemoryId)memoryId, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(finalMemory);
 
         _output.WriteLine($"\nFinal to-do list:\n{finalMemory.Text}");
@@ -737,7 +737,7 @@ that should be replaced.",
 
         // Verify version history exists for rollback
         // Each edit creates a snapshot of the PREVIOUS state, so 3 edits = 3 version snapshots
-        var versions = await storage.GetVersionHistory(finalMemory.Id, 10);
+        var versions = await storage.GetVersionHistory(finalMemory.Id, 10, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(3, versions.Count); // 3 edits means 3 snapshots of previous states
         _output.WriteLine($"\nVersion history: {versions.Count} versions");
     }
@@ -754,27 +754,28 @@ that should be replaced.",
             type: "document",
             text: "This is the original correct content.",
             source: "user",
-            title: "Important Document");
+            title: "Important Document",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var idMatch = System.Text.RegularExpressions.Regex.Match(createResult, @"ID: ([a-f0-9-]+)");
         var memoryId = Guid.Parse(idMatch.Groups[1].Value);
 
         // Make a mistake
-        await tools.Edit(memoryId, "original correct", "wrong");
+        await tools.Edit(memoryId, "original correct", "wrong", cancellationToken: TestContext.Current.CancellationToken);
 
-        var wrongMemory = await storage.Get((MemoryId)memoryId);
+        var wrongMemory = await storage.Get((MemoryId)memoryId, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(wrongMemory);
         Assert.Contains("wrong content", wrongMemory.Text);
         Assert.Equal(new VersionNumber(2), wrongMemory.CurrentVersion);
 
         // Revert to original
-        var revertResult = await tools.RevertToVersion(memoryId, new VersionNumber(1));
+        var revertResult = await tools.RevertToVersion(memoryId, new VersionNumber(1), cancellationToken: TestContext.Current.CancellationToken);
         _output.WriteLine($"Revert result: {revertResult}");
 
         Assert.Contains("successfully reverted", revertResult);
 
         // Verify content is restored
-        var revertedMemory = await storage.Get((MemoryId)memoryId);
+        var revertedMemory = await storage.Get((MemoryId)memoryId, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(revertedMemory);
         Assert.Contains("original correct", revertedMemory.Text);
         Assert.Equal(new VersionNumber(3), revertedMemory.CurrentVersion); // Revert creates new version

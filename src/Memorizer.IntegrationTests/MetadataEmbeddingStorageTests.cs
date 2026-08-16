@@ -6,7 +6,6 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -32,7 +31,7 @@ public class MetadataEmbeddingStorageTests : IDisposable
     private IServiceProvider CreateServices()
     {
         var services = new ServiceCollection();
-        
+
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -55,10 +54,10 @@ public class MetadataEmbeddingStorageTests : IDisposable
             Model = "all-minilm",
             Timeout = TimeSpan.FromMinutes(1)
         });
-        
+
         services.AddMemorizer();
         services.AddLogging();
-        
+
         return services.BuildServiceProvider();
     }
 
@@ -67,30 +66,31 @@ public class MetadataEmbeddingStorageTests : IDisposable
     {
         // Arrange
         var storage = _services.GetRequiredService<IStorage>();
-        
+
         // Test that the SearchWithMetadataEmbedding method works functionally
         // This test verifies:
         // 1. Metadata embeddings are generated during storage
         // 2. SearchWithMetadataEmbedding method executes without errors
         // 3. Results are returned in the expected format
         // 4. Similarity scores are calculated correctly
-        
+
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
         var uniqueTitle = $"MetadataEmbeddingTest-{uniqueId}";
         var uniqueTags = new[] { $"test-{uniqueId}", "metadata-embedding", "integration-test" };
-        
+
         var testMemory = await storage.StoreMemory(
             "test",
             "Test content for metadata search functionality verification",
             "test",
             uniqueTags,
             new Confidence(1.0),
-            uniqueTitle);
+            uniqueTitle,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Stored memory with ID: {testMemory.Id}, Title: '{uniqueTitle}'");
 
         // Verify the memory was stored correctly with metadata embedding
-        var storedMemory = await storage.Get(testMemory.Id);
+        var storedMemory = await storage.Get(testMemory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(storedMemory);
         Assert.Equal(uniqueTitle, storedMemory.Title);
         Assert.NotNull(storedMemory.EmbeddingMetadata);
@@ -101,13 +101,14 @@ public class MetadataEmbeddingStorageTests : IDisposable
         var results = await storage.SearchWithMetadataEmbedding(
             "test",
             limit: 10,
-            new SimilarityScore(0.1));
+            new SimilarityScore(0.1),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Search for 'test' returned {results.Count} results");
 
         // Verify the method works correctly
         Assert.NotNull(results);
-        
+
         // If we have results, verify they have the expected structure
         if (results.Count > 0)
         {
@@ -115,7 +116,7 @@ public class MetadataEmbeddingStorageTests : IDisposable
             Assert.NotNull(firstResult.Title);
             Assert.True(firstResult.Similarity.HasValue);
             Assert.True(firstResult.Similarity >= 0.0 && firstResult.Similarity <= 1.0);
-            
+
             _output.WriteLine($"✅ First result: ID={firstResult.Id}, Title='{firstResult.Title}', Similarity={firstResult.Similarity:F3}");
         }
 
@@ -123,7 +124,8 @@ public class MetadataEmbeddingStorageTests : IDisposable
         var specificResults = await storage.SearchWithMetadataEmbedding(
             uniqueTitle,
             limit: 5,
-            new SimilarityScore(0.1));
+            new SimilarityScore(0.1),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Search for unique title returned {specificResults.Count} results");
         Assert.NotNull(specificResults);
@@ -146,7 +148,7 @@ public class MetadataEmbeddingStorageTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Act - this method is used by the migration actor
-        var memories = await storage.GetMemoriesWithoutMetadataEmbeddings(10);
+        var memories = await storage.GetMemoriesWithoutMetadataEmbeddings(10, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - method works without throwing (specific results depend on DB state)
         Assert.NotNull(memories);
@@ -168,12 +170,13 @@ public class MetadataEmbeddingStorageTests : IDisposable
             "test",
             new[] { $"test-{uniqueId}", "owner-test" },
             new Confidence(1.0),
-            uniqueTitle);
+            uniqueTitle,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Created memory with ID: {testMemory.Id}, Title: '{uniqueTitle}'");
 
         // Verify the memory starts as Unfiled
-        var initialMemory = await storage.Get(testMemory.Id);
+        var initialMemory = await storage.Get(testMemory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(initialMemory);
         Assert.True(initialMemory.Owner.IsUnfiled, "Memory should start as Unfiled");
         _output.WriteLine($"✅ Memory starts as Unfiled: Owner={initialMemory.Owner}");
@@ -182,16 +185,17 @@ public class MetadataEmbeddingStorageTests : IDisposable
         var workspaceName = $"TestWorkspace-{uniqueId}";
         var workspace = await storage.CreateWorkspaceAsync(
             workspaceName,
-            "Test workspace for owner update test");
+            "Test workspace for owner update test",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Created workspace: ID={workspace.Id}, Name='{workspace.Name}'");
 
         // Act 1: Move memory to workspace
         var workspaceOwner = MemoryOwner.ForWorkspace(workspace.Id);
-        await storage.UpdateMemoryOwner(testMemory.Id, workspaceOwner);
+        await storage.UpdateMemoryOwner(testMemory.Id, workspaceOwner, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert 1: Verify the memory is now owned by the workspace
-        var movedMemory = await storage.Get(testMemory.Id);
+        var movedMemory = await storage.Get(testMemory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(movedMemory);
         Assert.Equal(OwnerTypeEnum.Workspace, movedMemory.Owner.Type);
         Assert.Equal(workspace.Id.Value, movedMemory.Owner.Id);
@@ -199,10 +203,10 @@ public class MetadataEmbeddingStorageTests : IDisposable
         _output.WriteLine($"✅ Memory moved to workspace: Owner={movedMemory.Owner}");
 
         // Act 2: Move memory back to Unfiled
-        await storage.UpdateMemoryOwner(testMemory.Id, MemoryOwner.Unfiled);
+        await storage.UpdateMemoryOwner(testMemory.Id, MemoryOwner.Unfiled, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert 2: Verify the memory is back to Unfiled
-        var unfiledMemory = await storage.Get(testMemory.Id);
+        var unfiledMemory = await storage.Get(testMemory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(unfiledMemory);
         Assert.True(unfiledMemory.Owner.IsUnfiled, "Memory should be back to Unfiled");
         _output.WriteLine($"✅ Memory moved back to Unfiled: Owner={unfiledMemory.Owner}");

@@ -1,12 +1,10 @@
 using Memorizer.Extensions;
 using Memorizer.Models;
-using Memorizer.Models.Enums;
 using Memorizer.Models.ValueTypes;
 using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -70,25 +68,25 @@ public class TagCloudIntegrationTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
         var tagCloud = _services.GetRequiredService<ITagCloudService>();
 
-        var workspace = await storage.CreateWorkspaceAsync("TagCloud Root", "root");
-        var project = await storage.CreateProjectAsync(workspace.Id, "TagCloud Project", "p");
-        var nested = await storage.CreateWorkspaceAsync("TagCloud Nested", "n", parentId: workspace.Id);
+        var workspace = await storage.CreateWorkspaceAsync("TagCloud Root", "root", cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "TagCloud Project", "p", cancellationToken: TestContext.Current.CancellationToken);
+        var nested = await storage.CreateWorkspaceAsync("TagCloud Nested", "n", parentId: workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         var created = new List<MemoryId>();
         try
         {
             created.Add((await storage.StoreMemory(
                 "reference", "workspace direct memory", "test", new[] { "alpha" },
-                new Confidence(1.0), "Workspace Memory", owner: MemoryOwner.ForWorkspace(workspace.Id))).Id);
+                new Confidence(1.0), "Workspace Memory", owner: MemoryOwner.ForWorkspace(workspace.Id), cancellationToken: TestContext.Current.CancellationToken)).Id);
             created.Add((await storage.StoreMemory(
                 "reference", "project memory", "test", new[] { "beta" },
-                new Confidence(1.0), "Project Memory", owner: MemoryOwner.ForProject(project.Id))).Id);
+                new Confidence(1.0), "Project Memory", owner: MemoryOwner.ForProject(project.Id), cancellationToken: TestContext.Current.CancellationToken)).Id);
             created.Add((await storage.StoreMemory(
                 "reference", "nested workspace memory", "test", new[] { "alpha", "gamma" },
-                new Confidence(1.0), "Nested Memory", owner: MemoryOwner.ForWorkspace(nested.Id))).Id);
+                new Confidence(1.0), "Nested Memory", owner: MemoryOwner.ForWorkspace(nested.Id), cancellationToken: TestContext.Current.CancellationToken)).Id);
 
             // Act - subtree covers direct + project + nested workspace tags
-            var subtreeCounts = await tagCloud.GetWorkspaceSubtreeTagCountsAsync(workspace.Id);
+            var subtreeCounts = await tagCloud.GetWorkspaceSubtreeTagCountsAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Contains(subtreeCounts, x => x.Tag == "alpha" && x.Count == 2);
@@ -98,10 +96,10 @@ public class TagCloudIntegrationTests : IDisposable
         finally
         {
             foreach (var id in created)
-                await storage.Delete(id);
-            await storage.DeleteProjectAsync(project.Id);
-            await storage.DeleteWorkspaceAsync(nested.Id);
-            await storage.DeleteWorkspaceAsync(workspace.Id);
+                await storage.Delete(id, TestContext.Current.CancellationToken);
+            await storage.DeleteProjectAsync(project.Id, cancellationToken: TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(nested.Id, cancellationToken: TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -112,21 +110,21 @@ public class TagCloudIntegrationTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
         var tagCloud = _services.GetRequiredService<ITagCloudService>();
 
-        var workspace = await storage.CreateWorkspaceAsync("TagCloud Root", "root");
-        var project = await storage.CreateProjectAsync(workspace.Id, "TagCloud Project", "p");
+        var workspace = await storage.CreateWorkspaceAsync("TagCloud Root", "root", cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "TagCloud Project", "p", cancellationToken: TestContext.Current.CancellationToken);
 
         var created = new List<MemoryId>();
         try
         {
             created.Add((await storage.StoreMemory(
                 "reference", "workspace memory", "test", new[] { "alpha" },
-                new Confidence(1.0), "Workspace Memory", owner: MemoryOwner.ForWorkspace(workspace.Id))).Id);
+                new Confidence(1.0), "Workspace Memory", owner: MemoryOwner.ForWorkspace(workspace.Id), cancellationToken: TestContext.Current.CancellationToken)).Id);
             created.Add((await storage.StoreMemory(
                 "reference", "project memory", "test", new[] { "beta" },
-                new Confidence(1.0), "Project Memory", owner: MemoryOwner.ForProject(project.Id))).Id);
+                new Confidence(1.0), "Project Memory", owner: MemoryOwner.ForProject(project.Id), cancellationToken: TestContext.Current.CancellationToken)).Id);
 
             // Act
-            var projectCounts = await tagCloud.GetProjectTagCountsAsync(project.Id);
+            var projectCounts = await tagCloud.GetProjectTagCountsAsync(project.Id, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert - only the project's own tag, not the workspace's
             var beta = Assert.Single(projectCounts);
@@ -136,9 +134,9 @@ public class TagCloudIntegrationTests : IDisposable
         finally
         {
             foreach (var id in created)
-                await storage.Delete(id);
-            await storage.DeleteProjectAsync(project.Id);
-            await storage.DeleteWorkspaceAsync(workspace.Id);
+                await storage.Delete(id, TestContext.Current.CancellationToken);
+            await storage.DeleteProjectAsync(project.Id, cancellationToken: TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -154,13 +152,13 @@ public class TagCloudIntegrationTests : IDisposable
         {
             created.Add((await storage.StoreMemory(
                 "reference", "global memory one", "test", new[] { "global-tag" },
-                new Confidence(1.0), "Global One")).Id);
+                new Confidence(1.0), "Global One", cancellationToken: TestContext.Current.CancellationToken)).Id);
             created.Add((await storage.StoreMemory(
                 "reference", "global memory two", "test", new[] { "global-tag", "other-tag" },
-                new Confidence(1.0), "Global Two")).Id);
+                new Confidence(1.0), "Global Two", cancellationToken: TestContext.Current.CancellationToken)).Id);
 
             // Act
-            var globalCounts = await tagCloud.GetGlobalTagCountsAsync();
+            var globalCounts = await tagCloud.GetGlobalTagCountsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert - counts aggregate across all memories
             Assert.Contains(globalCounts, x => x.Tag == "global-tag" && x.Count == 2);
@@ -169,7 +167,7 @@ public class TagCloudIntegrationTests : IDisposable
         finally
         {
             foreach (var id in created)
-                await storage.Delete(id);
+                await storage.Delete(id, TestContext.Current.CancellationToken);
         }
     }
 }

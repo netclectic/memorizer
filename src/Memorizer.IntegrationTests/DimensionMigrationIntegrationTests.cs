@@ -11,7 +11,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -60,49 +59,53 @@ public class DimensionMigrationIntegrationTests : TestKit
             "test",
             new[] { "null-test" },
             new Confidence(1.0),
-            "Null Test Memory");
+            "Null Test Memory",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Created memory {memory.Id}");
 
         // Manually set embedding to NULL to simulate mid-migration state
         // (The migration process drops NOT NULL constraint during regeneration)
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         // Drop NOT NULL constraints like migration does
         await using (var dropConstraintCmd = new NpgsqlCommand(
             "ALTER TABLE memories ALTER COLUMN embedding DROP NOT NULL", conn))
         {
-            await dropConstraintCmd.ExecuteNonQueryAsync();
+            await dropConstraintCmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
         await using (var dropConstraintCmd2 = new NpgsqlCommand(
             "ALTER TABLE memories ALTER COLUMN embedding_metadata DROP NOT NULL", conn))
         {
-            await dropConstraintCmd2.ExecuteNonQueryAsync();
+            await dropConstraintCmd2.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
 
         await using var updateCmd = new NpgsqlCommand(
             "UPDATE memories SET embedding = NULL, embedding_metadata = NULL WHERE id = @id", conn);
         updateCmd.Parameters.AddWithValue("id", memory.Id.Value);
-        await updateCmd.ExecuteNonQueryAsync();
+        await updateCmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine("Set embeddings to NULL");
 
         // Test Get() handles NULL embedding
-        var fetched = await storage.Get(memory.Id);
+        var fetched = await storage.Get(memory.Id,
+                cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(fetched);
         Assert.Null(fetched.Embedding);
         _output.WriteLine("✓ Get() handled NULL embedding correctly");
 
         // Test GetMemoriesPaginated() handles NULL embedding
-        var (memories, count) = await storage.GetMemoriesPaginated(1, 100);
+        var (memories, count) = await storage.GetMemoriesPaginated(1, 100,
+                cancellationToken: TestContext.Current.CancellationToken);
         var nullMemory = memories.FirstOrDefault(m => m.Id == memory.Id);
         Assert.NotNull(nullMemory);
         Assert.Null(nullMemory.Embedding);
         _output.WriteLine("✓ GetMemoriesPaginated() handled NULL embedding correctly");
 
         // Clean up
-        await storage.Delete(memory.Id);
+        await storage.Delete(memory.Id,
+                cancellationToken: TestContext.Current.CancellationToken);
     }
 
     /// <summary>
@@ -120,7 +123,7 @@ public class DimensionMigrationIntegrationTests : TestKit
 
         // The fake embedding service is configured to return 768 dimensions (target)
         // but the database is set to 384 - this should be detected as a mismatch
-        var validation = await dimensionService.ValidateAsync();
+        var validation = await dimensionService.ValidateAsync(ct: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Validation result:");
         _output.WriteLine($"  RequiresMigration: {validation.RequiresMigration}");
@@ -153,7 +156,8 @@ public class DimensionMigrationIntegrationTests : TestKit
         // Create some test memories
         for (int i = 0; i < 3; i++)
         {
-            await storage.StoreMemory("test", $"Content {i}", "test", new[] { "concurrent-test" }, new Confidence(1.0), $"Memory {i}");
+            await storage.StoreMemory("test", $"Content {i}", "test", new[] { "concurrent-test" }, new Confidence(1.0), $"Memory {i}",
+                cancellationToken: TestContext.Current.CancellationToken);
         }
 
         // Switch to target dimensions to simulate model change that triggers migration
@@ -161,12 +165,13 @@ public class DimensionMigrationIntegrationTests : TestKit
 
         // Get the migration actor
         var migrationActorRef = Host.Services.GetRequiredService<IRequiredActor<DimensionMigrationActorKey>>();
-        var migrationActor = await migrationActorRef.GetAsync();
+        var migrationActor = await migrationActorRef.GetAsync(TestContext.Current.CancellationToken);
 
         // Start first migration
         var firstStatus = await migrationActor.Ask<DimensionMigrationStatus>(
             new StartDimensionMigration(RequestedBy: "test-1"),
-            TimeSpan.FromSeconds(30));
+            TimeSpan.FromSeconds(30),
+            TestContext.Current.CancellationToken);
 
         _output.WriteLine($"First migration: IsRunning={firstStatus.IsRunning}, Status={firstStatus.Status}");
 
@@ -175,7 +180,8 @@ public class DimensionMigrationIntegrationTests : TestKit
             // Try to start second migration while first is running
             var secondStatus = await migrationActor.Ask<DimensionMigrationStatus>(
                 new StartDimensionMigration(RequestedBy: "test-2"),
-                TimeSpan.FromSeconds(5));
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
 
             _output.WriteLine($"Second migration: IsRunning={secondStatus.IsRunning}, Status={secondStatus.Status}");
 
@@ -187,10 +193,11 @@ public class DimensionMigrationIntegrationTests : TestKit
         DimensionMigrationStatus? finalStatus = null;
         for (int i = 0; i < 30; i++)
         {
-            await Task.Delay(500);
+            await Task.Delay(500, TestContext.Current.CancellationToken);
             finalStatus = await migrationActor.Ask<DimensionMigrationStatus>(
                 new GetDimensionMigrationStatus(),
-                TimeSpan.FromSeconds(5));
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
 
             if (!finalStatus.IsRunning)
                 break;
@@ -230,7 +237,8 @@ public class DimensionMigrationIntegrationTests : TestKit
                 "test",
                 new[] { "migration-test" },
                 new Confidence(1.0),
-                $"Migration Test Memory {i}");
+                $"Migration Test Memory {i}",
+                cancellationToken: TestContext.Current.CancellationToken);
             testMemories.Add(mem);
             _output.WriteLine($"Created memory {mem.Id}");
         }
@@ -238,7 +246,7 @@ public class DimensionMigrationIntegrationTests : TestKit
         // Verify memories have 384d embeddings
         foreach (var mem in testMemories)
         {
-            var fetched = await storage.Get(mem.Id);
+            var fetched = await storage.Get(mem.Id, cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(fetched?.Embedding);
             Assert.Equal(DimensionMigrationTestFixture.StartingModelDimensions, fetched.Embedding.ToArray().Length);
         }
@@ -248,18 +256,19 @@ public class DimensionMigrationIntegrationTests : TestKit
         _fakeEmbeddingService.SetDimensions(DimensionMigrationTestFixture.TargetModelDimensions);
 
         // Verify mismatch is detected
-        var validation = await dimensionService.ValidateAsync();
+        var validation = await dimensionService.ValidateAsync(ct: TestContext.Current.CancellationToken);
         Assert.True(validation.RequiresMigration);
         _output.WriteLine($"✓ Dimension mismatch detected: {validation.MismatchDescription}");
 
         // Start migration
         _output.WriteLine("\n=== Starting dimension migration ===");
         var migrationActorRef = Host.Services.GetRequiredService<IRequiredActor<DimensionMigrationActorKey>>();
-        var migrationActor = await migrationActorRef.GetAsync();
+        var migrationActor = await migrationActorRef.GetAsync(TestContext.Current.CancellationToken);
 
         var startStatus = await migrationActor.Ask<DimensionMigrationStatus>(
             new StartDimensionMigration(RequestedBy: "integration-test"),
-            TimeSpan.FromSeconds(30));
+            TimeSpan.FromSeconds(30),
+            TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Migration started: IsRunning={startStatus.IsRunning}, Status={startStatus.Status}");
         _output.WriteLine($"  OldDimensions: {startStatus.OldDimensions}");
@@ -279,11 +288,12 @@ public class DimensionMigrationIntegrationTests : TestKit
 
         while (DateTime.UtcNow - startTime < maxWait)
         {
-            await Task.Delay(TimeSpan.FromSeconds(1));
+            await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
 
             finalStatus = await migrationActor.Ask<DimensionMigrationStatus>(
                 new GetDimensionMigrationStatus(),
-                TimeSpan.FromSeconds(5));
+                TimeSpan.FromSeconds(5),
+                TestContext.Current.CancellationToken);
 
             _output.WriteLine($"Progress: {finalStatus.Status}, Processed={finalStatus.Processed}/{finalStatus.TotalMemories}");
 
@@ -300,7 +310,7 @@ public class DimensionMigrationIntegrationTests : TestKit
 
         // Check schema dimensions
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         await using var schemaCmd = new NpgsqlCommand(@"
             SELECT atttypmod
@@ -308,21 +318,21 @@ public class DimensionMigrationIntegrationTests : TestKit
             WHERE attrelid = 'memories'::regclass
             AND attname = 'embedding'", conn);
 
-        var schemaDimensions = Convert.ToInt32(await schemaCmd.ExecuteScalarAsync());
+        var schemaDimensions = Convert.ToInt32(await schemaCmd.ExecuteScalarAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(DimensionMigrationTestFixture.TargetModelDimensions, schemaDimensions);
         _output.WriteLine($"✓ Schema updated to {schemaDimensions} dimensions");
 
         // Check embedding_config
         await using var configCmd = new NpgsqlCommand(@"
             SELECT dimensions FROM embedding_config WHERE is_active = true", conn);
-        var configDimensions = Convert.ToInt32(await configCmd.ExecuteScalarAsync());
+        var configDimensions = Convert.ToInt32(await configCmd.ExecuteScalarAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(DimensionMigrationTestFixture.TargetModelDimensions, configDimensions);
         _output.WriteLine($"✓ embedding_config updated to {configDimensions} dimensions");
 
         // Check all embeddings were regenerated with new dimensions
         foreach (var originalMem in testMemories)
         {
-            var regenerated = await storage.Get(originalMem.Id);
+            var regenerated = await storage.Get(originalMem.Id, cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(regenerated);
             Assert.NotNull(regenerated.Embedding);
 
@@ -335,7 +345,7 @@ public class DimensionMigrationIntegrationTests : TestKit
 
         // Clean up
         foreach (var mem in testMemories)
-            await storage.Delete(mem.Id);
+            await storage.Delete(mem.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     protected override void ConfigureServices(HostBuilderContext context, IServiceCollection services)
