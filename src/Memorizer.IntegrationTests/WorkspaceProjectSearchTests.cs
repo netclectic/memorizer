@@ -13,15 +13,18 @@ namespace Memorizer.IntegrationTests;
 /// Tests name-based search across hierarchy levels and breadcrumb/path retrieval.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class WorkspaceProjectSearchTests : IDisposable
+public class WorkspaceProjectSearchTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public WorkspaceProjectSearchTests(IntegrationTestFixture fixture, ITestOutputHelper output)

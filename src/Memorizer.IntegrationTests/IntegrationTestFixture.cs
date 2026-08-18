@@ -1,6 +1,7 @@
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Memorizer.Services;
+using Npgsql;
 using System.Net.Http.Json;
 using Testcontainers.PostgreSql;
 
@@ -99,6 +100,32 @@ public class IntegrationTestFixture : IAsyncLifetime
         {
             throw new Exception("Failed to initialize Ollama embedding model after multiple attempts");
         }
+    }
+
+    /// <summary>
+    /// Resets all user data so each test class starts from a clean database.
+    /// Removes memories (and their relationships/events/versions), projects, and
+    /// non-system workspaces. Preserves the schema, migration history, system
+    /// workspaces (Unfiled, System Memories), embedding config, and provider settings.
+    /// </summary>
+    public async Task ResetDatabaseAsync(CancellationToken cancellationToken = default)
+    {
+        await using var conn = new NpgsqlConnection(PostgresConnectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        // Delete in FK-dependency order. memories are deleted before projects so the
+        // project-delete trigger that moves memories to Unfiled has no work to do.
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand("""
+            DELETE FROM memory_relationships;
+            DELETE FROM memory_events;
+            DELETE FROM memory_versions;
+            DELETE FROM memories;
+            DELETE FROM projects;
+            DELETE FROM workspaces WHERE is_system = false;
+            """, conn, tx);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

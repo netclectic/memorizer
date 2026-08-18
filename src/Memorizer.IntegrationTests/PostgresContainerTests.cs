@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 using PostgMem.Tools;
+using System.Diagnostics;
 
 namespace Memorizer.IntegrationTests;
 
@@ -28,9 +29,14 @@ public class IntegrationTests : TestKit
         _fixture = fixture;
     }
 
+    protected override Task BeforeTestStart()
+    {
+        return TestDatabaseReset.ForNewClassAsync(_fixture, GetType()).AsTask();
+    }
+
     protected override void ConfigureServices(HostBuilderContext context, IServiceCollection services)
     {
-        var apiUrl = new Uri(_fixture.OllamaApiUrl);
+        Uri apiUrl = new Uri(_fixture.OllamaApiUrl);
 
         // Add in-memory configuration
         var config = new ConfigurationBuilder()
@@ -63,7 +69,7 @@ public class IntegrationTests : TestKit
     [Fact]
     public async Task CanConnectAndUsePgvector()
     {
-        await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
+        await using NpgsqlConnection conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
         await conn.OpenAsync(TestContext.Current.CancellationToken);
         await using var cmd = conn.CreateCommand();
         // Create a vector with default dimensions (384) - matches database schema
@@ -206,14 +212,14 @@ public class IntegrationTests : TestKit
     [Fact]
     public async Task SchemaVersionTable_IsPopulated_AfterMigration()
     {
-        await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
+        await using NpgsqlConnection conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
         await conn.OpenAsync(TestContext.Current.CancellationToken);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT version, name, applied_at FROM schema_version ORDER BY version";
         await using var reader = await cmd.ExecuteReaderAsync(TestContext.Current.CancellationToken);
         var found = false;
-        var versions = new List<int>();
-        var names = new List<string>();
+        List<int> versions = new List<int>();
+        List<string> names = new List<string>();
         while (await reader.ReadAsync(TestContext.Current.CancellationToken))
         {
             found = true;
@@ -359,7 +365,7 @@ public class IntegrationTests : TestKit
         """;
 
         // Act
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var result = await memoryTools.Store(
             type: "reference",
             text: largeContent,
@@ -460,7 +466,7 @@ public class IntegrationTests : TestKit
         _storage = Host.Services.GetRequiredService<IStorage>();
 
         // Create a chain of interconnected memories to test for infinite recursion
-        var memories = new List<Memory>();
+        List<Memory> memories = new List<Memory>();
         for (int i = 0; i < 10; i++)
         {
             var memory = await _storage.StoreMemory(
@@ -490,7 +496,7 @@ public class IntegrationTests : TestKit
         }
 
         // Stress test: rapidly call GetMany multiple times concurrently
-        var tasks = new List<Task>();
+        List<Task> tasks = new List<Task>();
         for (int i = 0; i < 20; i++)
         {
             var memoryIds = memories.Take(5).Select(m => m.Id).ToArray();
@@ -522,12 +528,18 @@ public class IntegrationTests : TestKit
             }, TestContext.Current.CancellationToken));
         }
 
-        // Wait for all tasks to complete - should not hang due to infinite recursion
-        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        // Wait for all tasks to complete - should not hang due to infinite recursion or a
+        // connection-pool deadlock.
+        Task allTasks = Task.WhenAll(tasks);
+        Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
         var completedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
 
         Assert.True(completedTask != timeoutTask,
             "Stress test timed out - possible infinite recursion or connection leak");
+
+        // Observe the worker tasks so a fault (e.g. connection-pool exhaustion) fails the test
+        // loudly instead of being silently swallowed by Task.WhenAny.
+        await allTasks;
     }
 
     [Fact]
@@ -539,7 +551,7 @@ public class IntegrationTests : TestKit
         var hubMemory = await _storage.StoreMemory("hub", "Hub memory", "test", new[] { "hub" }, new Confidence(1.0), "Hub", cancellationToken: TestContext.Current.CancellationToken);
 
         // Create many related memories
-        var relatedMemories = new List<Memory>();
+        List<Memory> relatedMemories = new List<Memory>();
         for (int i = 0; i < 50; i++)
         {
             var memory = await _storage.StoreMemory(
@@ -557,7 +569,7 @@ public class IntegrationTests : TestKit
         }
 
         // Test: Get the hub memory (should load all 50 relationships efficiently)
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var retrievedHub = await _storage.Get(hubMemory.Id, TestContext.Current.CancellationToken);
         stopwatch.Stop();
 
@@ -591,7 +603,7 @@ public class IntegrationTests : TestKit
         await _storage.CreateRelationship(memory1.Id, memory2.Id, "test_rel", cancellationToken: TestContext.Current.CancellationToken);
 
         // Rapid-fire operations that used to cause connection leaks
-        var operations = new List<Task>();
+        List<Task> operations = new List<Task>();
         for (int i = 0; i < 100; i++)
         {
             operations.Add(Task.Run(async () =>
@@ -609,7 +621,7 @@ public class IntegrationTests : TestKit
         }
 
         // Should complete without "too many clients" error
-        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
         var completedTask = await Task.WhenAny(Task.WhenAll(operations), timeoutTask);
 
         Assert.True(completedTask != timeoutTask,

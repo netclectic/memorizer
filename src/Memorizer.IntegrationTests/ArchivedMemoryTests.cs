@@ -15,7 +15,7 @@ namespace Memorizer.IntegrationTests;
 /// and that GetArchivedMemoriesAsync works with project filtering.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class ArchivedMemoryTests : IDisposable
+public class ArchivedMemoryTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -441,8 +441,11 @@ public class ArchivedMemoryTests : IDisposable
         }
     }
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_serviceProvider as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

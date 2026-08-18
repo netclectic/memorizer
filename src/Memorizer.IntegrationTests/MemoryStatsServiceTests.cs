@@ -24,6 +24,11 @@ public class MemoryStatsServiceTests : TestKit
         _fixture = fixture;
     }
 
+    protected override Task BeforeTestStart()
+    {
+        return TestDatabaseReset.ForNewClassAsync(_fixture, GetType()).AsTask();
+    }
+
     protected override void ConfigureServices(HostBuilderContext context, IServiceCollection services)
     {
         // Configure services just like in the IntegrationTests class

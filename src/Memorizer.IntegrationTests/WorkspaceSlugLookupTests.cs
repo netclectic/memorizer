@@ -15,7 +15,7 @@ namespace Memorizer.IntegrationTests;
 /// Exercises the tool logic, slug normalization, and the underlying SQL.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class WorkspaceSlugLookupTests : IDisposable
+public class WorkspaceSlugLookupTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -28,7 +28,13 @@ public class WorkspaceSlugLookupTests : IDisposable
         _services = CreateServices();
     }
 
-    public void Dispose() => (_services as IDisposable)?.Dispose();
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
+    {
+        (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
+    }
 
     private IServiceProvider CreateServices()
     {

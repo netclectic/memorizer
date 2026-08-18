@@ -14,7 +14,7 @@ namespace Memorizer.IntegrationTests;
 /// across the configured model, actual model output, and database schema.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class EmbeddingDimensionServiceTests
+public class EmbeddingDimensionServiceTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -24,6 +24,10 @@ public class EmbeddingDimensionServiceTests
         _fixture = fixture;
         _output = output;
     }
+
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     /// <summary>
     /// Creates a ServiceProvider for testing. Returns ServiceProvider directly (not IServiceProvider)

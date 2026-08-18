@@ -16,7 +16,7 @@ namespace Memorizer.IntegrationTests;
 /// Tests version history creation, editing, and the handling of pre-versioning memories.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class MemoryVersioningTests : IDisposable
+public class MemoryVersioningTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -973,9 +973,11 @@ public class MemoryVersioningTests : IDisposable
         }
     }
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_serviceProvider as IDisposable)?.Dispose();
-        _dataSource?.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

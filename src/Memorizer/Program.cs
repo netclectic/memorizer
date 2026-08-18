@@ -43,7 +43,9 @@ builder.Services.AddMemorizerOtel();
 builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.Stateless = true)
     .WithTools<MemoryTools>()
-    .WithTools<WorkspaceTools>();
+    .WithTools<WorkspaceTools>()
+    .WithPrompts<MemorizerPrompts>()
+    .WithResources<MemorizerResources>();
 
 // Add MVC support for web UI
 builder.Services.AddControllersWithViews()
@@ -148,3 +150,6 @@ app.MapControllerRoute(
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
 app.Run();
+
+// Exposed so integration tests can boot the app in-process via WebApplicationFactory<Program>.
+public partial class Program;

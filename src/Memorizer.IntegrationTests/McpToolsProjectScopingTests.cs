@@ -15,15 +15,18 @@ namespace Memorizer.IntegrationTests;
 /// Tests the new projectId, owner, and archetype parameters in Store and Search.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class McpToolsProjectScopingTests : IDisposable
+public class McpToolsProjectScopingTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public McpToolsProjectScopingTests(IntegrationTestFixture fixture, ITestOutputHelper output)
@@ -291,6 +294,12 @@ public class McpToolsProjectScopingTests : IDisposable
     {
         var storage = _services.GetRequiredService<IStorage>();
 
+        // Unique per-run nonce shared between the target titles and the query. The metadata
+        // embedding is built from title+tags, so this makes the targets the only positive-
+        // similarity matches in the shared container - they cannot be crowded out of the limit
+        // or land on the distance cutoff, which is what made this test flaky.
+        var nonce = Guid.NewGuid().ToString("N");
+
         // Create a workspace and project
         var workspace = await storage.CreateWorkspaceAsync("Global Search Test", null, cancellationToken: TestContext.Current.CancellationToken);
         var project = await storage.CreateProjectAsync(workspace.Id, "Test Project", null, cancellationToken: TestContext.Current.CancellationToken);
@@ -307,7 +316,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 source: "test",
                 tags: null,
                 confidence: new Confidence(1.0),
-                title: "Project Global Search Test",
+                title: $"{nonce} scope-probe project",
                 owner: MemoryOwner.ForProject(project.Id),
                 cancellationToken: TestContext.Current.CancellationToken
             );
@@ -318,16 +327,17 @@ public class McpToolsProjectScopingTests : IDisposable
                 source: "test",
                 tags: null,
                 confidence: new Confidence(1.0),
-                title: "Unfiled Global Search Test",
+                title: $"{nonce} scope-probe unfiled",
                 owner: null,
                 cancellationToken: TestContext.Current.CancellationToken
             );
 
-            // Search without projectId (should search all).
-            // Use minSimilarity=0.0 (accept any distance) so this test verifies owner-filter
-            // bypass behavior rather than embedding quality, which is nondeterministic in CI.
+            // Search without projectId (should search all). The nonce in each target title makes
+            // them the only positive-similarity matches, so this deterministically verifies the
+            // owner-filter bypass (projectId=null returns both project-owned and unfiled memories)
+            // rather than embedding quality, which is nondeterministic in CI.
             var globalResults = await storage.SearchWithMetadataEmbedding(
-                query: "global search testing",
+                query: $"{nonce} scope-probe",
                 limit: 10,
                 minSimilarity: new SimilarityScore(0.0),
                 filterTags: null,
@@ -457,6 +467,12 @@ public class McpToolsProjectScopingTests : IDisposable
     {
         var storage = _services.GetRequiredService<IStorage>();
 
+        // Unique per-run nonce shared between the target titles and the query. All five memories
+        // carry it, so all are positive-similarity matches; the workspace-A-scoped search must
+        // then return exactly A's memories and exclude B's by the owner filter alone - which is
+        // what this test verifies. Removes the title/query mismatch that made it flaky.
+        var nonce = Guid.NewGuid().ToString("N");
+        
         var workspaceA = await storage.CreateWorkspaceAsync("Workspace A", null, cancellationToken: TestContext.Current.CancellationToken);
         var workspaceB = await storage.CreateWorkspaceAsync("Workspace B", null, cancellationToken: TestContext.Current.CancellationToken);
         var projectA1 = await storage.CreateProjectAsync(workspaceA.Id, "Project A1", null, cancellationToken: TestContext.Current.CancellationToken);
@@ -477,7 +493,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 source: "test",
                 tags: null,
                 confidence: new Confidence(1.0),
-                title: "Workspace A Note",
+                title: $"{nonce} rollup-probe workspace-a",
                 owner: MemoryOwner.ForWorkspace(workspaceA.Id),
             cancellationToken: TestContext.Current.CancellationToken
             );
@@ -488,7 +504,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 source: "test",
                 tags: null,
                 confidence: new Confidence(1.0),
-                title: "Project A1 Note",
+                title: $"{nonce} rollup-probe project-a1",
                 owner: MemoryOwner.ForProject(projectA1.Id),
             cancellationToken: TestContext.Current.CancellationToken
             );
@@ -499,7 +515,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 source: "test",
                 tags: null,
                 confidence: new Confidence(1.0),
-                title: "Project A2 Note",
+                title: $"{nonce} rollup-probe project-a2",
                 owner: MemoryOwner.ForProject(projectA2.Id),
             cancellationToken: TestContext.Current.CancellationToken
             );
@@ -510,7 +526,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 source: "test",
                 tags: null,
                 confidence: new Confidence(1.0),
-                title: "Workspace B Note",
+                title: $"{nonce} rollup-probe workspace-b",
                 owner: MemoryOwner.ForWorkspace(workspaceB.Id),
             cancellationToken: TestContext.Current.CancellationToken
             );
@@ -521,13 +537,13 @@ public class McpToolsProjectScopingTests : IDisposable
                 source: "test",
                 tags: null,
                 confidence: new Confidence(1.0),
-                title: "Project B1 Note",
+                title: $"{nonce} rollup-probe project-b1",
                 owner: MemoryOwner.ForProject(projectB1.Id),
                 cancellationToken: TestContext.Current.CancellationToken
             );
 
             var results = await storage.SearchWithMetadataEmbedding(
-                query: "flux capacitor configuration",
+                query: $"{nonce} rollup-probe",
                 limit: 20,
                 minSimilarity: new SimilarityScore(0.0),
                 filterTags: null,

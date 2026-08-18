@@ -15,14 +15,17 @@ namespace Memorizer.IntegrationTests;
 /// found via the full-text leg.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class HybridSearchIntegrationTests : IDisposable
+public class HybridSearchIntegrationTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public HybridSearchIntegrationTests(IntegrationTestFixture fixture, ITestOutputHelper output)

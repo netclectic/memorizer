@@ -13,7 +13,7 @@ namespace Memorizer.IntegrationTests;
 /// Tests the underlying services that the Web UI depends on
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class WebUIIntegrationTests : IDisposable
+public class WebUIIntegrationTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -507,9 +507,12 @@ public class WebUIIntegrationTests : IDisposable
         }
     }
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         _httpClient?.Dispose();
         (_serviceProvider as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

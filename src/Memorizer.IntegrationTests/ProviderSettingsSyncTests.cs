@@ -32,7 +32,9 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        // Clean up provider_settings table before each test
+        // Reset the shared DB for this class, then clean up provider_settings table before each test
+        await TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
         await using var dataSource = NpgsqlDataSource.Create(_fixture.PostgresConnectionString);
         await using var conn = await dataSource.OpenConnectionAsync(cancellationToken: TestContext.Current.CancellationToken);
         await using var cmd = new NpgsqlCommand("DELETE FROM provider_settings", conn);

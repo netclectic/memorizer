@@ -15,15 +15,18 @@ namespace Memorizer.IntegrationTests;
 /// These tests verify the tools work correctly for common agent use cases.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class MemoryToolsIntegrationTests : IDisposable
+public class MemoryToolsIntegrationTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public MemoryToolsIntegrationTests(IntegrationTestFixture fixture, ITestOutputHelper output)

@@ -40,12 +40,41 @@ Integration tests use shared PostgreSQL containers via XUnit test collections. E
 - If `ServiceProvider` is created in the constructor, add a `Dispose()` method
 - If `ServiceProvider` is created per-test, use `using var services = CreateServices();`
 
+## Test isolation between test classes
+
+All test classes in `IntegrationTestCollection` share one Postgres container, and the
+database is **not** reset automatically between test classes. Every `CreateWorkspaceAsync` /
+`CreateProjectAsync` writes a system-index memory (owned by the System Memories workspace),
+so a class that leaves data behind can break global-invariant tests in later classes (e.g.
+`Migration014_ExistingMemories_HaveDefaultOwner`).
+
+Therefore every DB-touching test class in `IntegrationTestCollection` must reset the database
+once when its class starts by calling `TestDatabaseReset.ForNewClassAsync(_fixture, GetType())`:
+
+- Plain classes: implement `IAsyncLifetime` and call it from `InitializeAsync` (keep the
+  existing provider disposal in `DisposeAsync`).
+- `TestKit`-derived classes: override `BeforeTestStart()` and return the helper's task
+  (the base `TestKit` already implements `IAsyncLifetime` — do not re-implement it).
+
+```csharp
+// Plain class
+[Collection(nameof(IntegrationTestCollection))]
+public class MyTests : IAsyncLifetime
+{
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+    public ValueTask DisposeAsync() { (_services as IDisposable)?.Dispose(); return ValueTask.CompletedTask; }
+}
+
+// TestKit-derived class
+protected override Task BeforeTestStart() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType()).AsTask();
+```
+
 Example patterns:
 
 ```csharp
 // Pattern 1: ServiceProvider created in constructor
 [Collection(nameof(IntegrationTestCollection))]
-public class MyTests : IDisposable
+public class MyTests : IAsyncLifetime
 {
     private readonly IServiceProvider _services;
 
@@ -54,17 +83,24 @@ public class MyTests : IDisposable
         _services = CreateServices(fixture);
     }
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 }
 
 // Pattern 2: ServiceProvider created per-test (for different configurations)
 [Collection(nameof(IntegrationTestCollection))]
-public class MyTests
+public class MyTests : IAsyncLifetime
 {
     private ServiceProvider CreateServices(string model) { /* ... */ }
+
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     [Fact]
     public async Task MyTest()

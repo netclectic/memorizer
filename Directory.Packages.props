@@ -4,6 +4,8 @@
   </PropertyGroup>
   <PropertyGroup Label="SharedVersions">
     <MsftVersion>10.0.0</MsftVersion>
+    <!-- All ModelContextProtocol.* packages move together; bump here to upgrade the MCP SDK. -->
+    <McpVersion>2.2.0</McpVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
@@ -15,8 +17,9 @@
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="$(MsftVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="$(MsftVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="$(MsftVersion)" />
-    <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
-    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+    <PackageVersion Include="ModelContextProtocol" Version="$(McpVersion)" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="$(McpVersion)" />
+    <PackageVersion Include="ModelContextProtocol.Core" Version="$(McpVersion)" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="OllamaSharp" Version="5.4.30" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
@@ -32,6 +35,9 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageVersion Include="Spectre.Console" Version="0.54.0" />
+    <!-- Security pin: overrides the vulnerable SSH.NET brought in transitively by Testcontainers.
+         SSH.NET <= 2025.1.0 has a high-severity advisory (GHSA-q939-rpr3-3284); fixed in 2026.0.0. -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageVersion Include="xunit.v3" Version="4.0.0" />

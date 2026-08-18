@@ -31,6 +31,11 @@ public class EmbeddingRegenerationActorTests : TestKit
         _output = output;
     }
 
+    protected override Task BeforeTestStart()
+    {
+        return TestDatabaseReset.ForNewClassAsync(_fixture, GetType()).AsTask();
+    }
+
     /// <summary>
     /// Waits for the embedding regeneration job to complete using TestKit's AwaitConditionAsync.
     /// Returns the final status once the job transitions from running to idle.

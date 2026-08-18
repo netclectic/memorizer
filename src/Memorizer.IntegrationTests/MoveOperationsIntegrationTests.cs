@@ -14,15 +14,18 @@ namespace Memorizer.IntegrationTests;
 /// - Reparenting a workspace under a new parent or promoting to top-level
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class MoveOperationsIntegrationTests : IDisposable
+public class MoveOperationsIntegrationTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public MoveOperationsIntegrationTests(IntegrationTestFixture fixture, ITestOutputHelper output)

@@ -12,14 +12,17 @@ namespace Memorizer.IntegrationTests;
 /// Integration tests for the tag cloud service (ITagCloudService).
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class TagCloudIntegrationTests : IDisposable
+public class TagCloudIntegrationTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public TagCloudIntegrationTests(IntegrationTestFixture fixture, ITestOutputHelper output)
