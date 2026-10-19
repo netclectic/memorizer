@@ -418,6 +418,9 @@ FodyWeavers.xsd
 .claude/
 /.playwright-mcp
 
+# Stryker.NET mutation testing output
+StrykerOutput/
+**/StrykerOutput/
 
 # CodeGraph files
 .codegraph

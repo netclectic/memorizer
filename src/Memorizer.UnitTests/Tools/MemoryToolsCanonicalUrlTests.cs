@@ -365,7 +365,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.Get(memoryId.Value, includeSimilar: false, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await tools.Get(memoryId.Value.ToString(), includeSimilar: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -394,7 +394,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.GetMany(memoryIds, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await tools.GetMany(memoryIds.Select(x => x.ToString()).ToArray(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);

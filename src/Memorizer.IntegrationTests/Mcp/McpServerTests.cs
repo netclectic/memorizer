@@ -152,4 +152,157 @@ public sealed class McpServerTests : IAsyncLifetime
         string contents = string.Join("\n", read.Contents.OfType<TextResourceContents>().Select(c => c.Text));
         Assert.Contains(workspaceName, contents);
     }
+
+    // ---- Argument-validation boundary (Piece 1) ----
+    //
+    // These drive the real server the way a confused agent does. Before the 2.3.0 SDK
+    // bump these calls returned the opaque "An error occurred invoking '<tool>'"; the
+    // CallTool boundary must now return a correctable message instead. The negative
+    // assertion on OpaqueSdkError is the standing tripwire for the next SDK bump.
+
+    private const string OpaqueSdkError = "An error occurred invoking";
+
+    private static string ResultText(CallToolResult result) =>
+        string.Join("\n", result.Content.OfType<TextContentBlock>().Select(c => c.Text));
+
+    [Fact]
+    public async Task Store_without_a_required_field_returns_a_correctable_error_not_the_opaque_sdk_error()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var mcp = await ConnectAsync(cts.Token);
+
+        // 'title' omitted — still required (it's the search index). 'type'/'source' now
+        // default, so title is the probe for the boundary's required-field handling.
+        var result = await mcp.Client.CallToolAsync(
+            "store",
+            new Dictionary<string, object?>
+            {
+                ["text"] = "hello world",
+            },
+            cancellationToken: cts.Token);
+
+        var text = ResultText(result);
+        _output.WriteLine(text);
+        Assert.True(result.IsError == true);
+        Assert.DoesNotContain(OpaqueSdkError, text);
+        // Positively assert the message is actually corrective — names the field and
+        // tells the agent it is required. Without this, the test would still pass if the
+        // SDK front-ran us with some other unhelpful message that merely lacks the opaque
+        // string.
+        Assert.Contains("title", text);
+        Assert.Contains("required", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Valid_id_passes_the_filter_and_reaches_the_tool()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var mcp = await ConnectAsync(cts.Token);
+
+        // A well-formed, hyphenated UUID must pass straight through the filter to the
+        // tool body — the positive counterpart to the N-format case. A nonexistent id
+        // returns a graceful "not found" without touching the embedding backend, so the
+        // assertion stays independent of Class B (embedding) behaviour.
+        var result = await mcp.Client.CallToolAsync(
+            "get",
+            new Dictionary<string, object?> { ["id"] = "00000000-0000-0000-0000-000000000001" },
+            cancellationToken: cts.Token);
+
+        var text = ResultText(result);
+        _output.WriteLine(text);
+        Assert.NotEqual(true, result.IsError);
+        Assert.Contains("not found", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("dec906c7e5d14abebaf827af5a842ae5")]      // 32-hex, no hyphens (N-format)
+    [InlineData("doc-dec906c7e5d14abebaf827af5a842ae5")]  // recall doc- prefix, N-format
+    public async Task Get_with_lightly_mangled_id_is_normalized_and_resolves(string id)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var mcp = await ConnectAsync(cts.Token);
+
+        // Piece 2: ids are parsed loosely, so these resolve to a real UUID and reach the
+        // tool (which returns a graceful "not found" since nothing is stored) instead of
+        // erroring at the boundary. No embedding is generated on a not-found get.
+        var result = await mcp.Client.CallToolAsync(
+            "get",
+            new Dictionary<string, object?> { ["id"] = id },
+            cancellationToken: cts.Token);
+
+        var text = ResultText(result);
+        _output.WriteLine(text);
+        Assert.NotEqual(true, result.IsError);
+        Assert.DoesNotContain(OpaqueSdkError, text);
+        Assert.Contains("not found", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Get_with_unparseable_id_returns_a_correctable_message()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var mcp = await ConnectAsync(cts.Token);
+
+        var result = await mcp.Client.CallToolAsync(
+            "get",
+            new Dictionary<string, object?> { ["id"] = "not-a-real-id" },
+            cancellationToken: cts.Token);
+
+        var text = ResultText(result);
+        _output.WriteLine(text);
+        Assert.DoesNotContain(OpaqueSdkError, text);
+        // Tool-body validation returns a plain, corrective string (the existing convention).
+        Assert.Contains("Invalid memory id", text);
+    }
+
+    [Theory]
+    [InlineData("store")]
+    [InlineData("get")]
+    [InlineData("edit")]
+    public async Task Omitting_required_parameters_never_yields_the_opaque_sdk_error(string tool)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var mcp = await ConnectAsync(cts.Token);
+
+        var result = await mcp.Client.CallToolAsync(
+            tool,
+            new Dictionary<string, object?>(), // no arguments at all
+            cancellationToken: cts.Token);
+
+        var text = ResultText(result);
+        _output.WriteLine($"{tool}: {text}");
+        Assert.True(result.IsError == true);
+        Assert.DoesNotContain(OpaqueSdkError, text);
+        // Every tool with required params must name one as missing — a corrective message,
+        // not merely the absence of the opaque one.
+        Assert.Contains("required", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Store_with_text_too_long_to_embed_fails_honestly_never_opaque_or_misleading()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var mcp = await ConnectAsync(cts.Token);
+
+        // A body far beyond the embedding model's context window. Depending on the backend
+        // it may reject the embedding (fail) or truncate (succeed); either way the caller
+        // must never see the opaque SDK error or the misleading "check the arguments"
+        // advice, and if it fails it must be the honest "not saved" embedding message.
+        var longText = string.Concat(Enumerable.Repeat("context and detail. ", 600)); // ~12 KB
+        var result = await mcp.Client.CallToolAsync(
+            "store",
+            new Dictionary<string, object?>
+            {
+                ["text"] = longText,
+                ["title"] = "Very long memory",
+            },
+            cancellationToken: cts.Token);
+
+        var text = ResultText(result);
+        _output.WriteLine(text.Length > 300 ? text[..300] : text);
+        Assert.DoesNotContain(OpaqueSdkError, text);
+        Assert.DoesNotContain("Check the arguments", text);
+        if (result.IsError == true)
+            Assert.Contains("not saved", text, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -60,6 +60,70 @@ public class EntityIdTests
         Assert.Equal(MemoryId.Empty, id);
     }
 
+    [Theory]
+    [InlineData("dec906c7-e5d1-4abe-baf8-27af5a842ae5")]              // hyphenated (D)
+    [InlineData("dec906c7e5d14abebaf827af5a842ae5")]                  // 32-hex (N)
+    [InlineData("  dec906c7-e5d1-4abe-baf8-27af5a842ae5  ")]          // surrounding whitespace
+    [InlineData("doc-dec906c7e5d14abebaf827af5a842ae5")]              // recall doc- prefix
+    [InlineData("memory-dec906c7-e5d1-4abe-baf8-27af5a842ae5")]       // memory- prefix
+    [InlineData("https://memory.testlab.petabridge.net/view/dec906c7-e5d1-4abe-baf8-27af5a842ae5")] // pasted URL
+    [InlineData("https://memory.testlab.petabridge.net/view/dec906c7-e5d1-4abe-baf8-27af5a842ae5?v=2")] // URL + query
+    [InlineData("DOC-dec906c7e5d14abebaf827af5a842ae5")]             // prefix is case-insensitive
+    [InlineData("Memory-dec906c7-e5d1-4abe-baf8-27af5a842ae5")]      // mixed-case prefix
+    [InlineData("DEC906C7-E5D1-4ABE-BAF8-27AF5A842AE5")]             // uppercase hex (D-format)
+    [InlineData("DEC906C7E5D14ABEBAF827AF5A842AE5")]                 // uppercase hex (N-format)
+    [InlineData("https://memory.testlab.petabridge.net/view/dec906c7-e5d1-4abe-baf8-27af5a842ae5/")]        // trailing slash
+    [InlineData("https://memory.testlab.petabridge.net/view/dec906c7-e5d1-4abe-baf8-27af5a842ae5#details")] // URL fragment
+    [InlineData("{dec906c7-e5d1-4abe-baf8-27af5a842ae5}")]           // braced form (GUID 'B')
+    [InlineData("/dec906c7e5d14abebaf827af5a842ae5")]                // leading slash only (lastSlash == 0 boundary)
+    [InlineData("mem-dec906c7e5d14abebaf827af5a842ae5")]             // mem- prefix (third known prefix)
+    public void MemoryId_TryParseLoose_AcceptsAgentShapes(string input)
+    {
+        var ok = MemoryId.TryParseLoose(input, out var id);
+
+        Assert.True(ok);
+        Assert.Equal(Guid.Parse("dec906c7-e5d1-4abe-baf8-27af5a842ae5"), id.Value);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not-a-guid")]
+    [InlineData("doc-not-a-guid")]
+    [InlineData("doc-")]                                              // prefix only, no id
+    [InlineData("doc-memory-dec906c7e5d14abebaf827af5a842ae5")]       // only one prefix is stripped
+    [InlineData("https://memory.testlab.petabridge.net/view/")]       // URL with no id segment
+    [InlineData("12345")]                                             // too short to be a GUID
+    public void MemoryId_TryParseLoose_RejectsGarbage(string? input)
+    {
+        var ok = MemoryId.TryParseLoose(input, out var id);
+
+        Assert.False(ok);
+        Assert.Equal(MemoryId.Empty, id);
+    }
+
+    [Fact]
+    public void MemoryId_TryParseLoose_NeverMisreadsAValidGuid()
+    {
+        // Collision guard: normalization must never turn one valid GUID into a different
+        // one. It only strips non-hex wrappers, and every strip-prefix (doc-/memory-/mem-)
+        // begins with a non-hex letter while a canonical GUID string begins with a hex
+        // digit — so no valid id can be mis-stripped. Verified over many random GUIDs in
+        // both D and N forms; if a future prefix could ever lead a GUID, a round-trip here
+        // would fail (either a mismatch or a rejected parse).
+        for (var i = 0; i < 500; i++)
+        {
+            var g = Guid.NewGuid();
+
+            Assert.True(MemoryId.TryParseLoose(g.ToString("D"), out var d));
+            Assert.Equal(g, d.Value);
+
+            Assert.True(MemoryId.TryParseLoose(g.ToString("N"), out var n));
+            Assert.Equal(g, n.Value);
+        }
+    }
+
     [Fact]
     public void MemoryId_ExplicitCast_ToGuid_Works()
     {
@@ -228,6 +292,111 @@ public class EntityIdTests
         var id2 = ProjectId.New();
 
         Assert.NotEqual(id1, id2);
+    }
+
+    #endregion
+
+    #region TryParse coverage for all id types
+
+    // Every id type exposes the same TryParse contract. These exercise both the
+    // Guid.TryParse-success branch (return true) and the failure branch (return false,
+    // out = Empty) so the negation and both return paths are asserted, not just executed.
+
+    [Fact]
+    public void RelationshipId_TryParse_ValidAndInvalid()
+    {
+        var guid = Guid.NewGuid();
+        Assert.True(RelationshipId.TryParse(guid.ToString(), out var ok));
+        Assert.Equal(guid, ok.Value);
+
+        Assert.False(RelationshipId.TryParse("not-a-guid", out var bad));
+        Assert.Equal(RelationshipId.Empty, bad);
+
+        Assert.False(RelationshipId.TryParse(null, out var nul));
+        Assert.Equal(RelationshipId.Empty, nul);
+    }
+
+    [Fact]
+    public void VersionId_TryParse_ValidAndInvalid()
+    {
+        var guid = Guid.NewGuid();
+        Assert.True(VersionId.TryParse(guid.ToString(), out var ok));
+        Assert.Equal(guid, ok.Value);
+
+        Assert.False(VersionId.TryParse("not-a-guid", out var bad));
+        Assert.Equal(VersionId.Empty, bad);
+
+        Assert.False(VersionId.TryParse("", out var empty));
+        Assert.Equal(VersionId.Empty, empty);
+    }
+
+    [Fact]
+    public void EventId_TryParse_ValidAndInvalid()
+    {
+        var guid = Guid.NewGuid();
+        Assert.True(EventId.TryParse(guid.ToString(), out var ok));
+        Assert.Equal(guid, ok.Value);
+
+        Assert.False(EventId.TryParse("not-a-guid", out var bad));
+        Assert.Equal(EventId.Empty, bad);
+
+        Assert.False(EventId.TryParse(null, out var nul));
+        Assert.Equal(EventId.Empty, nul);
+    }
+
+    [Fact]
+    public void ProviderSettingsId_TryParse_ValidAndInvalid()
+    {
+        var guid = Guid.NewGuid();
+        Assert.True(ProviderSettingsId.TryParse(guid.ToString(), out var ok));
+        Assert.Equal(guid, ok.Value);
+
+        Assert.False(ProviderSettingsId.TryParse("not-a-guid", out var bad));
+        Assert.Equal(ProviderSettingsId.Empty, bad);
+
+        Assert.False(ProviderSettingsId.TryParse(null, out var nul));
+        Assert.Equal(ProviderSettingsId.Empty, nul);
+    }
+
+    [Fact]
+    public void WorkspaceId_TryParse_ValidAndInvalid()
+    {
+        var guid = Guid.NewGuid();
+        Assert.True(WorkspaceId.TryParse(guid.ToString(), out var ok));
+        Assert.Equal(guid, ok.Value);
+
+        Assert.False(WorkspaceId.TryParse("not-a-guid", out var bad));
+        Assert.Equal(WorkspaceId.Empty, bad);
+
+        Assert.False(WorkspaceId.TryParse(null, out var nul));
+        Assert.Equal(WorkspaceId.Empty, nul);
+    }
+
+    [Fact]
+    public void ProjectId_TryParse_ValidAndInvalid()
+    {
+        var guid = Guid.NewGuid();
+        Assert.True(ProjectId.TryParse(guid.ToString(), out var ok));
+        Assert.Equal(guid, ok.Value);
+
+        Assert.False(ProjectId.TryParse("not-a-guid", out var bad));
+        Assert.Equal(ProjectId.Empty, bad);
+
+        Assert.False(ProjectId.TryParse(null, out var nul));
+        Assert.Equal(ProjectId.Empty, nul);
+    }
+
+    // Round-trip Parse for the non-Memory id types (Parse delegates to Guid.Parse).
+    [Fact]
+    public void OtherIdTypes_Parse_RoundTrips()
+    {
+        var g = Guid.NewGuid();
+        Assert.Equal(g, RelationshipId.Parse(g.ToString()).Value);
+        Assert.Equal(g, VersionId.Parse(g.ToString()).Value);
+        Assert.Equal(g, EventId.Parse(g.ToString()).Value);
+        Assert.Equal(g, ProviderSettingsId.Parse(g.ToString()).Value);
+        Assert.Equal(g, WorkspaceId.Parse(g.ToString()).Value);
+        Assert.Equal(g, ProjectId.Parse(g.ToString()).Value);
     }
 
     #endregion

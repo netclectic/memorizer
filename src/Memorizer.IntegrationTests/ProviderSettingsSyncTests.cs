@@ -34,10 +34,8 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
         // Reset the shared DB for this class, then clean up provider_settings table before each test
         await TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
 
-        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_fixture.PostgresConnectionString);
-        await using NpgsqlConnection conn = await dataSource.OpenConnectionAsync(cancellationToken: TestContext.Current.CancellationToken);
-        await using NpgsqlCommand cmd = new NpgsqlCommand("DELETE FROM provider_settings", conn);
-        await cmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
+        // Clean up provider_settings before each test (in case a prior run leaked rows).
+        await CleanProviderSettingsAsync();
     }
 
     public async ValueTask DisposeAsync()
@@ -47,6 +45,22 @@ public class ProviderSettingsSyncTests : IAsyncLifetime
             await _host.StopAsync(cancellationToken: TestContext.Current.CancellationToken);
             _host.Dispose();
         }
+
+        // Symmetric cleanup — this class shares the Postgres container with the rest of
+        // the collection and writes ACTIVE provider_settings rows to prove DB settings
+        // override config. Without removing them on teardown, the last row (e.g. the
+        // nonexistent 'custom-embedding-model') survives into other tests: their full-app
+        // startup (InitializationService) applies it, so their embedding calls target a
+        // model Ollama has not pulled and fail. Clean on the way out, not just in.
+        await CleanProviderSettingsAsync();
+    }
+
+    private async Task CleanProviderSettingsAsync()
+    {
+        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_fixture.PostgresConnectionString);
+        await using NpgsqlConnection conn = await dataSource.OpenConnectionAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await using NpgsqlCommand cmd = new NpgsqlCommand("DELETE FROM provider_settings", conn);
+        await cmd.ExecuteNonQueryAsync(cancellationToken: TestContext.Current.CancellationToken);
     }
 
     private IHost CreateHost(Dictionary<string, string?> configOverrides)

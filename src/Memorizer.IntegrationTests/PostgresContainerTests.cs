@@ -365,7 +365,7 @@ public class IntegrationTests : TestKit
         """;
 
         // Act
-        Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        Stopwatch stopwatch = Stopwatch.StartNew();
         var result = await memoryTools.Store(
             type: "reference",
             text: largeContent,
@@ -569,7 +569,7 @@ public class IntegrationTests : TestKit
         }
 
         // Test: Get the hub memory (should load all 50 relationships efficiently)
-        Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        Stopwatch stopwatch = Stopwatch.StartNew();
         var retrievedHub = await _storage.Get(hubMemory.Id, TestContext.Current.CancellationToken);
         stopwatch.Stop();
 
