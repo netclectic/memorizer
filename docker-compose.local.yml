@@ -29,64 +29,19 @@ services:
     depends_on:
       - postgres
 
-  ollama:
-    image: ollama/ollama
-    restart: unless-stopped
-    container_name: memorizer-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-
-  # Initialize Ollama with the required models
-  ollama-init:
-    image: curlimages/curl:latest
-    container_name: memorizer-ollama-init
-    entrypoint: ["/bin/sh", "-c"]
-    depends_on:
-      - ollama
-    command: >
-      "
-      echo 'Waiting for Ollama service to start...' &&
-      sleep 15 &&
-      
-      echo 'Pulling embedding model...' &&
-      for i in 1 2 3 4 5; do
-        echo 'Attempting to pull embedding model (try $i/5)...' &&
-        if curl -s -X POST http://ollama:11434/api/pull -d '{\"name\": \"all-minilm:33m-l12-v2-fp16\"}'; then
-          echo 'Embedding model pull initiated successfully' &&
-          break
-        fi &&
-        echo 'Ollama not ready yet for embedding model, waiting...' &&
-        sleep 10
-      done &&
-      
-      echo 'Pulling lightweight LLM model...' &&
-      for i in 1 2 3 4 5; do
-        echo 'Attempting to pull LLM model (try $i/5)...' &&
-        if curl -s -X POST http://ollama:11434/api/pull -d '{\"name\": \"qwen2:0.5b\"}'; then
-          echo 'LLM model pull initiated successfully' &&
-          echo 'All models pulled successfully' &&
-          exit 0
-        fi &&
-        echo 'Failed to pull LLM model, retrying...' &&
-        sleep 10
-      done &&
-      echo 'Failed to pull models after multiple attempts' &&
-      exit 1
-      "
-
   # Memorizer application
   memorizer:
-    image: memorizer:latest
+    image: petabridge/memorizer:latest
     restart: unless-stopped
     container_name: memorizer-dev
     environment:
       - ConnectionStrings__Storage=Host=postgres;Port=5432;Database=postgmem;Username=postgres;Password=postgres
-      - MEMORIZER_Embeddings__ApiUrl=http://ollama:11434
-      - MEMORIZER_Embeddings__Model=all-minilm:33m-l12-v2-fp16
-      - MEMORIZER_LLM__ApiUrl=http://ollama:11434
-      - MEMORIZER_LLM__Model=qwen2:0.5b
+      - MEMORIZER_Embeddings__Provider=openai
+      - MEMORIZER_Embeddings__ApiUrl=http://100.115.249.121:1234/v1
+      - MEMORIZER_Embeddings__Model=text-embedding-nomic-embed-text-v1.5
+      - MEMORIZER_LLM__Provider=openai
+      - MEMORIZER_LLM__ApiUrl=http://100.115.249.121:1234/v1
+      - MEMORIZER_LLM__Model=google/gemma-4-12b
       - MEMORIZER_LLM__Timeout=00:02:00
       - MEMORIZER_LLM__Chunking__MinCharactersForChunking=2000
       - MEMORIZER_LLM__Chunking__TargetChunkSize=1500
@@ -104,9 +59,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama-init:
-        condition: service_completed_successfully
 
 volumes:
   postgres-data:
-  ollama-data: 

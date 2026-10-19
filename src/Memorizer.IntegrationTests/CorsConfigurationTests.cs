@@ -1,6 +1,5 @@
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 

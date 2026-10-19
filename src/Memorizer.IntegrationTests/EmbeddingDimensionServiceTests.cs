@@ -6,7 +6,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -15,7 +14,7 @@ namespace Memorizer.IntegrationTests;
 /// across the configured model, actual model output, and database schema.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class EmbeddingDimensionServiceTests
+public class EmbeddingDimensionServiceTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -25,6 +24,10 @@ public class EmbeddingDimensionServiceTests
         _fixture = fixture;
         _output = output;
     }
+
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     /// <summary>
     /// Creates a ServiceProvider for testing. Returns ServiceProvider directly (not IServiceProvider)
@@ -73,7 +76,7 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         // Act
-        var dimensions = await dimensionService.ProbeModelDimensionsAsync();
+        var dimensions = await dimensionService.ProbeModelDimensionsAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(dimensions);
@@ -89,7 +92,7 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         // Act
-        var schemaDimensions = await dimensionService.GetDatabaseSchemaDimensionsAsync();
+        var schemaDimensions = await dimensionService.GetDatabaseSchemaDimensionsAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(schemaDimensions);
@@ -105,7 +108,7 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         // Act
-        var result = await dimensionService.ValidateAsync();
+        var result = await dimensionService.ValidateAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.HasMismatch, $"Unexpected mismatch: {result.MismatchDescription}");
@@ -125,29 +128,29 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(TestContext.Current.CancellationToken);
 
         // Deactivate any existing configs first
         await using var deactivateCmd = new NpgsqlCommand(
             "UPDATE embedding_config SET is_active = false WHERE is_active = true", conn);
-        await deactivateCmd.ExecuteNonQueryAsync();
+        await deactivateCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         // Insert a fake config claiming a different dimension (simulating prior model with 768D)
         await using var cmd = new NpgsqlCommand(@"
             INSERT INTO embedding_config (model_name, dimensions, detected_at, is_active)
             VALUES ('fake-model-768d', 768, NOW(), true)", conn);
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         try
         {
             // Act
-            var result = await dimensionService.ValidateAsync();
+            var result = await dimensionService.ValidateAsync(TestContext.Current.CancellationToken);
 
             // Assert - Model and schema are both 384, so stale stored config should be auto-reconciled
             Assert.False(result.HasMismatch, $"Unexpected mismatch. Result: detected={result.DetectedModelDimensions}, stored={result.StoredDimensions}, schema={result.DatabaseSchemaDimensions}");
             Assert.False(result.RequiresMigration);
 
-            var activeConfig = await dimensionService.GetActiveConfigAsync();
+            var activeConfig = await dimensionService.GetActiveConfigAsync(TestContext.Current.CancellationToken);
             Assert.NotNull(activeConfig);
             Assert.Equal("all-minilm", activeConfig.ModelName);
             Assert.Equal(384, activeConfig.Dimensions);
@@ -158,7 +161,7 @@ public class EmbeddingDimensionServiceTests
             // Cleanup - remove the fake config
             await using var cleanupCmd = new NpgsqlCommand(
                 "DELETE FROM embedding_config WHERE model_name = 'fake-model-768d'", conn);
-            await cleanupCmd.ExecuteNonQueryAsync();
+            await cleanupCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
     }
 
@@ -170,30 +173,30 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(TestContext.Current.CancellationToken);
 
         // Deactivate any existing configs first
         await using var deactivateCmd = new NpgsqlCommand(
             "UPDATE embedding_config SET is_active = false WHERE is_active = true", conn);
-        await deactivateCmd.ExecuteNonQueryAsync();
+        await deactivateCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         // Insert a config that claims 1024 dimensions (but schema is 384)
         // This simulates a failed migration where schema didn't change
         await using var insertCmd = new NpgsqlCommand(@"
             INSERT INTO embedding_config (model_name, dimensions, detected_at, is_active)
             VALUES ('mxbai-embed-large', 1024, NOW(), true)", conn);
-        await insertCmd.ExecuteNonQueryAsync();
+        await insertCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         try
         {
             // Act
-            var result = await dimensionService.ValidateAsync();
+            var result = await dimensionService.ValidateAsync(TestContext.Current.CancellationToken);
 
             // Assert - Probe and schema are both 384, so stale stored config should be auto-reconciled
             Assert.False(result.HasMismatch, $"Unexpected mismatch. Description: {result.MismatchDescription}");
             Assert.False(result.RequiresMigration);
 
-            var activeConfig = await dimensionService.GetActiveConfigAsync();
+            var activeConfig = await dimensionService.GetActiveConfigAsync(TestContext.Current.CancellationToken);
             Assert.NotNull(activeConfig);
             Assert.Equal("all-minilm", activeConfig.ModelName);
             Assert.Equal(384, activeConfig.Dimensions);
@@ -204,7 +207,7 @@ public class EmbeddingDimensionServiceTests
             // Cleanup
             await using var cleanupCmd = new NpgsqlCommand(
                 "DELETE FROM embedding_config WHERE model_name = 'mxbai-embed-large'", conn);
-            await cleanupCmd.ExecuteNonQueryAsync();
+            await cleanupCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
     }
 
@@ -216,12 +219,12 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         // Act
-        await dimensionService.UpdateActiveConfigAsync("test-model", 512);
+        await dimensionService.UpdateActiveConfigAsync("test-model", 512, TestContext.Current.CancellationToken);
 
         try
         {
             // Assert
-            var activeConfig = await dimensionService.GetActiveConfigAsync();
+            var activeConfig = await dimensionService.GetActiveConfigAsync(TestContext.Current.CancellationToken);
             Assert.NotNull(activeConfig);
             Assert.Equal("test-model", activeConfig.ModelName);
             Assert.Equal(512, activeConfig.Dimensions);
@@ -230,10 +233,10 @@ public class EmbeddingDimensionServiceTests
 
             // Verify only one active config exists
             await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-            await conn.OpenAsync();
+            await conn.OpenAsync(TestContext.Current.CancellationToken);
             await using var cmd = new NpgsqlCommand(
                 "SELECT COUNT(*) FROM embedding_config WHERE is_active = true", conn);
-            var count = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+            var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(TestContext.Current.CancellationToken));
             Assert.Equal(1, count);
             _output.WriteLine($"✅ Only one active config exists: count={count}");
         }
@@ -241,10 +244,10 @@ public class EmbeddingDimensionServiceTests
         {
             // Cleanup - remove test config
             await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-            await conn.OpenAsync();
+            await conn.OpenAsync(TestContext.Current.CancellationToken);
             await using var cleanupCmd = new NpgsqlCommand(
                 "DELETE FROM embedding_config WHERE model_name = 'test-model'", conn);
-            await cleanupCmd.ExecuteNonQueryAsync();
+            await cleanupCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
     }
 
@@ -256,7 +259,7 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         // Act
-        var effectiveDimensions = await dimensionService.GetEffectiveDimensionsAsync();
+        var effectiveDimensions = await dimensionService.GetEffectiveDimensionsAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(384, effectiveDimensions);
@@ -272,12 +275,12 @@ public class EmbeddingDimensionServiceTests
 
         // Act - First call probes the model
         var startFirst = DateTime.UtcNow;
-        var dimensions1 = await dimensionService.ProbeModelDimensionsAsync();
+        var dimensions1 = await dimensionService.ProbeModelDimensionsAsync(TestContext.Current.CancellationToken);
         var durationFirst = DateTime.UtcNow - startFirst;
 
         // Second call should use cached value
         var startSecond = DateTime.UtcNow;
-        var dimensions2 = await dimensionService.ProbeModelDimensionsAsync();
+        var dimensions2 = await dimensionService.ProbeModelDimensionsAsync(TestContext.Current.CancellationToken);
         var durationSecond = DateTime.UtcNow - startSecond;
 
         // Assert
@@ -295,7 +298,7 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         // Act
-        var dimensions = await dimensionService.ProbeModelDimensionsAsync();
+        var dimensions = await dimensionService.ProbeModelDimensionsAsync(TestContext.Current.CancellationToken);
 
         // Assert - Should gracefully return null, not throw
         Assert.Null(dimensions);
@@ -311,17 +314,17 @@ public class EmbeddingDimensionServiceTests
 
         // First, set up a stored config that matches the schema
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(TestContext.Current.CancellationToken);
         await using var insertCmd = new NpgsqlCommand(@"
             INSERT INTO embedding_config (model_name, dimensions, detected_at, is_active)
             VALUES ('prior-model', 384, NOW(), true)
             ON CONFLICT DO NOTHING", conn);
-        await insertCmd.ExecuteNonQueryAsync();
+        await insertCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         try
         {
             // Act
-            var result = await dimensionService.ValidateAsync();
+            var result = await dimensionService.ValidateAsync(TestContext.Current.CancellationToken);
 
             // Assert - Should still work using stored/schema values
             Assert.False(result.EmbeddingApiAvailable);
@@ -334,7 +337,7 @@ public class EmbeddingDimensionServiceTests
             // Cleanup
             await using var cleanupCmd = new NpgsqlCommand(
                 "DELETE FROM embedding_config WHERE model_name = 'prior-model'", conn);
-            await cleanupCmd.ExecuteNonQueryAsync();
+            await cleanupCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
     }
 
@@ -347,23 +350,23 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(TestContext.Current.CancellationToken);
 
         // Deactivate existing configs
         await using var deactivateCmd = new NpgsqlCommand(
             "UPDATE embedding_config SET is_active = false WHERE is_active = true", conn);
-        await deactivateCmd.ExecuteNonQueryAsync();
+        await deactivateCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         // Insert config for a different model but same 384 dimensions
         await using var insertCmd = new NpgsqlCommand(@"
             INSERT INTO embedding_config (model_name, dimensions, detected_at, is_active)
             VALUES ('different-384d-model', 384, NOW(), true)", conn);
-        await insertCmd.ExecuteNonQueryAsync();
+        await insertCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         try
         {
             // Act
-            var result = await dimensionService.ValidateAsync();
+            var result = await dimensionService.ValidateAsync(TestContext.Current.CancellationToken);
 
             // Assert - Model name changed but dimensions match, so no migration needed
             Assert.False(result.HasMismatch,
@@ -377,7 +380,7 @@ public class EmbeddingDimensionServiceTests
             // Cleanup
             await using var cleanupCmd = new NpgsqlCommand(
                 "DELETE FROM embedding_config WHERE model_name = 'different-384d-model'", conn);
-            await cleanupCmd.ExecuteNonQueryAsync();
+            await cleanupCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
     }
 
@@ -389,17 +392,17 @@ public class EmbeddingDimensionServiceTests
         var dimensionService = services.GetRequiredService<IEmbeddingDimensionService>();
 
         await using var conn = new NpgsqlConnection(_fixture.PostgresConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(TestContext.Current.CancellationToken);
 
         // Deactivate all configs
         await using var deactivateCmd = new NpgsqlCommand(
             "UPDATE embedding_config SET is_active = false WHERE is_active = true", conn);
-        await deactivateCmd.ExecuteNonQueryAsync();
+        await deactivateCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         try
         {
             // Act
-            var config = await dimensionService.GetActiveConfigAsync();
+            var config = await dimensionService.GetActiveConfigAsync(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Null(config);

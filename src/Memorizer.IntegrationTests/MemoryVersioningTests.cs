@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Memorizer.Extensions;
 using Memorizer.Models;
 using Memorizer.Models.ValueTypes;
@@ -8,7 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Pgvector;
-using Xunit.Abstractions;
+using System.Text.Json;
 
 namespace Memorizer.IntegrationTests;
 
@@ -17,7 +16,7 @@ namespace Memorizer.IntegrationTests;
 /// Tests version history creation, editing, and the handling of pre-versioning memories.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class MemoryVersioningTests : IDisposable
+public class MemoryVersioningTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -130,10 +129,10 @@ public class MemoryVersioningTests : IDisposable
         var storage = _serviceProvider.GetRequiredService<IStorage>();
 
         // Generate embedding for the test content
-        var contentEmbedding = await embeddingService.Generate("Original content for pre-versioning test", CancellationToken.None);
-        var metadataEmbedding = await embeddingService.Generate("Pre-Versioning Test Memory", CancellationToken.None);
+        var contentEmbedding = await embeddingService.Generate("Original content for pre-versioning test", TestContext.Current.CancellationToken);
+        var metadataEmbedding = await embeddingService.Generate("Pre-Versioning Test Memory", TestContext.Current.CancellationToken);
 
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await _dataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
 
         // Insert memory directly without going through Storage service (simulating pre-versioning state)
         await InsertPreVersioningMemory(
@@ -151,7 +150,7 @@ public class MemoryVersioningTests : IDisposable
         // Verify no version snapshots exist
         await using var countCmd = new NpgsqlCommand("SELECT COUNT(*) FROM memory_versions WHERE memory_id = @memoryId", connection);
         countCmd.Parameters.AddWithValue("memoryId", memoryId);
-        var versionCount = (long)(await countCmd.ExecuteScalarAsync())!;
+        var versionCount = (long)(await countCmd.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
         Assert.Equal(0, versionCount);
 
         _output.WriteLine($"Created pre-versioning memory {memoryId} with no version snapshots");
@@ -168,7 +167,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "test", "pre-versioning", "updated" },
                 new Confidence(0.95),
                 "Updated Pre-Versioning Test Memory",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             // Assert: Update should succeed
@@ -178,7 +177,7 @@ public class MemoryVersioningTests : IDisposable
             Assert.Equal(new VersionNumber(2), updatedMemory.CurrentVersion);
 
             // Verify version snapshot was created for the old state
-            var versions = await storage.GetVersionHistory((MemoryId)memoryId, null, CancellationToken.None);
+            var versions = await storage.GetVersionHistory((MemoryId)memoryId, null, TestContext.Current.CancellationToken);
             Assert.Single(versions);
             Assert.Equal(new VersionNumber(1), versions[0].VersionNumber);
             Assert.Equal("Original content for pre-versioning test", versions[0].Text);
@@ -188,7 +187,7 @@ public class MemoryVersioningTests : IDisposable
         finally
         {
             // Cleanup
-            await storage.Delete((MemoryId)memoryId, CancellationToken.None);
+            await storage.Delete((MemoryId)memoryId, TestContext.Current.CancellationToken);
         }
     }
 
@@ -208,7 +207,8 @@ public class MemoryVersioningTests : IDisposable
             "test",
             new[] { "versioning", "test" },
             new Confidence(1.0),
-            "Versioning Test Memory"
+            "Versioning Test Memory",
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         _output.WriteLine($"Created memory {memory.Id} with current_version={memory.CurrentVersion}");
@@ -225,7 +225,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "versioning", "test", "edit1" },
                 new Confidence(0.9),
                 "Versioning Test Memory - Edit 1",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             Assert.NotNull(edit1);
@@ -241,7 +241,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "versioning", "test", "edit2" },
                 new Confidence(0.85),
                 "Versioning Test Memory - Edit 2",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             Assert.NotNull(edit2);
@@ -257,7 +257,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "versioning", "test", "edit3" },
                 new Confidence(0.8),
                 "Versioning Test Memory - Edit 3",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             Assert.NotNull(edit3);
@@ -265,7 +265,7 @@ public class MemoryVersioningTests : IDisposable
             _output.WriteLine($"Third edit successful. Current version: {edit3.CurrentVersion}");
 
             // Verify version history
-            var versions = await storage.GetVersionHistory(memory.Id, null, CancellationToken.None);
+            var versions = await storage.GetVersionHistory(memory.Id, null, TestContext.Current.CancellationToken);
             Assert.Equal(3, versions.Count); // v1, v2, v3 snapshots (v4 is current, not snapshotted yet)
 
             _output.WriteLine($"✓ All edits successful. Version history count: {versions.Count}");
@@ -273,7 +273,7 @@ public class MemoryVersioningTests : IDisposable
         finally
         {
             // Cleanup
-            await storage.Delete(memory.Id, CancellationToken.None);
+            await storage.Delete(memory.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -289,10 +289,10 @@ public class MemoryVersioningTests : IDisposable
         var embeddingService = _serviceProvider.GetRequiredService<IEmbeddingService>();
         var storage = _serviceProvider.GetRequiredService<IStorage>();
 
-        var contentEmbedding = await embeddingService.Generate("Pre-versioning content", CancellationToken.None);
-        var metadataEmbedding = await embeddingService.Generate("Pre-Versioning Multi-Edit Test", CancellationToken.None);
+        var contentEmbedding = await embeddingService.Generate("Pre-versioning content", TestContext.Current.CancellationToken);
+        var metadataEmbedding = await embeddingService.Generate("Pre-Versioning Multi-Edit Test", TestContext.Current.CancellationToken);
 
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await _dataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
 
         await InsertPreVersioningMemory(
             connection,
@@ -319,7 +319,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "test", "multi-edit", "edit1" },
                 new Confidence(0.9),
                 "Pre-Versioning Multi-Edit Test - Edit 1",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             Assert.NotNull(edit1);
@@ -336,7 +336,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "test", "multi-edit", "edit2" },
                 new Confidence(0.85),
                 "Pre-Versioning Multi-Edit Test - Edit 2",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             Assert.NotNull(edit2);
@@ -352,7 +352,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "test", "multi-edit", "edit3" },
                 new Confidence(0.8),
                 "Pre-Versioning Multi-Edit Test - Edit 3",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             Assert.NotNull(edit3);
@@ -360,7 +360,7 @@ public class MemoryVersioningTests : IDisposable
             _output.WriteLine($"Third edit successful. Current version: {edit3.CurrentVersion}");
 
             // Verify version history is correct
-            var versions = await storage.GetVersionHistory((MemoryId)memoryId, null, CancellationToken.None);
+            var versions = await storage.GetVersionHistory((MemoryId)memoryId, null, TestContext.Current.CancellationToken);
             Assert.Equal(3, versions.Count);
 
             // Versions should be 3, 2, 1 (descending order)
@@ -373,7 +373,7 @@ public class MemoryVersioningTests : IDisposable
         finally
         {
             // Cleanup
-            await storage.Delete((MemoryId)memoryId, CancellationToken.None);
+            await storage.Delete((MemoryId)memoryId, TestContext.Current.CancellationToken);
         }
     }
 
@@ -388,10 +388,10 @@ public class MemoryVersioningTests : IDisposable
         var embeddingService = _serviceProvider.GetRequiredService<IEmbeddingService>();
         var storage = _serviceProvider.GetRequiredService<IStorage>();
 
-        var contentEmbedding = await embeddingService.Generate("Original pre-versioning content for revert test", CancellationToken.None);
-        var metadataEmbedding = await embeddingService.Generate("Revert Test Memory", CancellationToken.None);
+        var contentEmbedding = await embeddingService.Generate("Original pre-versioning content for revert test", TestContext.Current.CancellationToken);
+        var metadataEmbedding = await embeddingService.Generate("Revert Test Memory", TestContext.Current.CancellationToken);
 
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await _dataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
 
         await InsertPreVersioningMemory(
             connection,
@@ -416,7 +416,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "test", "revert", "edited" },
                 new Confidence(0.9),
                 "Revert Test Memory - Edited",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             Assert.NotNull(edited);
@@ -424,7 +424,7 @@ public class MemoryVersioningTests : IDisposable
             _output.WriteLine($"Edited memory. Current version: {edited.CurrentVersion}");
 
             // Act: Revert to version 1
-            var reverted = await storage.RevertToVersion((MemoryId)memoryId, new VersionNumber(1), "test-user", CancellationToken.None);
+            var reverted = await storage.RevertToVersion((MemoryId)memoryId, new VersionNumber(1), "test-user", TestContext.Current.CancellationToken);
 
             // Assert
             Assert.NotNull(reverted);
@@ -437,7 +437,7 @@ public class MemoryVersioningTests : IDisposable
         finally
         {
             // Cleanup
-            await storage.Delete((MemoryId)memoryId, CancellationToken.None);
+            await storage.Delete((MemoryId)memoryId, TestContext.Current.CancellationToken);
         }
     }
 
@@ -459,10 +459,10 @@ public class MemoryVersioningTests : IDisposable
         var embeddingService = _serviceProvider.GetRequiredService<IEmbeddingService>();
         var storage = _serviceProvider.GetRequiredService<IStorage>();
 
-        var contentEmbedding = await embeddingService.Generate("Post-migration content", CancellationToken.None);
-        var metadataEmbedding = await embeddingService.Generate("Post-Migration Test Memory", CancellationToken.None);
+        var contentEmbedding = await embeddingService.Generate("Post-migration content", TestContext.Current.CancellationToken);
+        var metadataEmbedding = await embeddingService.Generate("Post-Migration Test Memory", TestContext.Current.CancellationToken);
 
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await _dataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
 
         // Step 1: Insert the memory with current_version = 1
         await InsertPreVersioningMemory(
@@ -493,7 +493,7 @@ public class MemoryVersioningTests : IDisposable
         versionCmd.Parameters.AddWithValue("title", "Post-Migration Test Memory");
         versionCmd.Parameters.AddWithValue("relationshipIds", Array.Empty<Guid>());
         versionCmd.Parameters.AddWithValue("createdAt", DateTime.UtcNow);
-        await versionCmd.ExecuteNonQueryAsync();
+        await versionCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         // Step 3: Also create the memory_created event (like migration does)
         const string insertEventSql = @"
@@ -504,12 +504,12 @@ public class MemoryVersioningTests : IDisposable
         eventCmd.Parameters.AddWithValue("memoryId", memoryId);
         eventCmd.Parameters.AddWithValue("eventData", JsonDocument.Parse("{\"migration\": true}"));
         eventCmd.Parameters.AddWithValue("timestamp", DateTime.UtcNow);
-        await eventCmd.ExecuteNonQueryAsync();
+        await eventCmd.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
 
         // Verify setup: version 1 snapshot exists
         await using var countCmd = new NpgsqlCommand("SELECT COUNT(*) FROM memory_versions WHERE memory_id = @memoryId AND version_number = 1", connection);
         countCmd.Parameters.AddWithValue("memoryId", memoryId);
-        var versionCount = (long)(await countCmd.ExecuteScalarAsync())!;
+        var versionCount = (long)(await countCmd.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
         Assert.Equal(1, versionCount);
 
         _output.WriteLine($"Created post-migration memory {memoryId} WITH version 1 snapshot (simulating migration state)");
@@ -526,7 +526,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "test", "post-migration", "edited" },
                 new Confidence(0.95),
                 "Post-Migration Test Memory - Edited",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             // Assert: Update should succeed without duplicate key error
@@ -536,7 +536,7 @@ public class MemoryVersioningTests : IDisposable
             Assert.Equal(new VersionNumber(2), updatedMemory.CurrentVersion);
 
             // Verify version history now has v1 (from migration) and v2 event
-            var versions = await storage.GetVersionHistory((MemoryId)memoryId, null, CancellationToken.None);
+            var versions = await storage.GetVersionHistory((MemoryId)memoryId, null, TestContext.Current.CancellationToken);
 
             // Should have version 1 (from migration) - might also have version 2 depending on implementation
             Assert.True(versions.Count >= 1);
@@ -547,7 +547,7 @@ public class MemoryVersioningTests : IDisposable
         finally
         {
             // Cleanup
-            await storage.Delete((MemoryId)memoryId, CancellationToken.None);
+            await storage.Delete((MemoryId)memoryId, TestContext.Current.CancellationToken);
         }
     }
 
@@ -568,15 +568,16 @@ public class MemoryVersioningTests : IDisposable
             "test",
             new[] { "stats-test" },
             new Confidence(1.0),
-            "Normal Stats Test Memory"
+            "Normal Stats Test Memory",
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Create a pre-versioning memory directly
         var preVersioningId = Guid.NewGuid();
-        var contentEmbedding = await embeddingService.Generate("Pre-versioning stats test", CancellationToken.None);
-        var metadataEmbedding = await embeddingService.Generate("Pre-Versioning Stats Test", CancellationToken.None);
+        var contentEmbedding = await embeddingService.Generate("Pre-versioning stats test", TestContext.Current.CancellationToken);
+        var metadataEmbedding = await embeddingService.Generate("Pre-Versioning Stats Test", TestContext.Current.CancellationToken);
 
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await _dataSource.OpenConnectionAsync(TestContext.Current.CancellationToken);
 
         await InsertPreVersioningMemory(
             connection,
@@ -601,7 +602,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "stats-test", "edited" },
                 new Confidence(0.9),
                 "Normal Stats Test Memory - Edited",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             await storage.UpdateMemory(
@@ -612,11 +613,11 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "stats-test", "edited" },
                 new Confidence(0.9),
                 "Pre-Versioning Stats Test - Edited",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
 
             // Act
-            var stats = await storage.GetVersionStats(CancellationToken.None);
+            var stats = await storage.GetVersionStats(TestContext.Current.CancellationToken);
 
             // Assert
             Assert.True(stats.TotalMemories >= 2);
@@ -627,8 +628,8 @@ public class MemoryVersioningTests : IDisposable
         finally
         {
             // Cleanup
-            await storage.Delete(normalMemory.Id, CancellationToken.None);
-            await storage.Delete((MemoryId)preVersioningId, CancellationToken.None);
+            await storage.Delete(normalMemory.Id, TestContext.Current.CancellationToken);
+            await storage.Delete((MemoryId)preVersioningId, TestContext.Current.CancellationToken);
         }
     }
 
@@ -650,7 +651,8 @@ public class MemoryVersioningTests : IDisposable
             "test",
             new[] { "v1", "original" },
             new Confidence(1.0),
-            "Revert Test V1"
+            "Revert Test V1",
+            cancellationToken: TestContext.Current.CancellationToken
         );
         var memoryId = memory.Id;
         _output.WriteLine($"Created memory at v{memory.CurrentVersion}: '{memory.Text}'");
@@ -666,21 +668,21 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "v2", "edited" },
                 new Confidence(0.9),
                 "Revert Test V2",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
             Assert.NotNull(v2);
             Assert.Equal(new VersionNumber(2), v2.CurrentVersion);
             _output.WriteLine($"Edited memory to v{v2.CurrentVersion}: '{v2.Text}'");
 
             // Step 3: Revert to v1 (creates v3 with v1's content)
-            var v3 = await storage.RevertToVersion(memoryId, new VersionNumber(1), "test-user", CancellationToken.None);
+            var v3 = await storage.RevertToVersion(memoryId, new VersionNumber(1), "test-user", TestContext.Current.CancellationToken);
             Assert.NotNull(v3);
             Assert.Equal(new VersionNumber(3), v3.CurrentVersion);
             Assert.Equal("Version 1 content - the original", v3.Text);
             _output.WriteLine($"Reverted to v1, now at v{v3.CurrentVersion}: '{v3.Text}'");
 
             // Step 4: Verify v2 snapshot was preserved
-            var versions = await storage.GetVersionHistory(memoryId, null, CancellationToken.None);
+            var versions = await storage.GetVersionHistory(memoryId, null, TestContext.Current.CancellationToken);
             _output.WriteLine($"Version history has {versions.Count} versions:");
             foreach (var v in versions)
             {
@@ -694,7 +696,7 @@ public class MemoryVersioningTests : IDisposable
             _output.WriteLine($"✓ v2 snapshot correctly preserved with content: '{v2Snapshot.Text}'");
 
             // Step 5: THE KEY TEST - Revert back to v2 ("revert the revert")
-            var v4 = await storage.RevertToVersion(memoryId, new VersionNumber(2), "test-user", CancellationToken.None);
+            var v4 = await storage.RevertToVersion(memoryId, new VersionNumber(2), "test-user", TestContext.Current.CancellationToken);
             Assert.NotNull(v4);
             Assert.Equal(new VersionNumber(4), v4.CurrentVersion);
             Assert.Equal("Version 2 content - the edited version", v4.Text);
@@ -702,7 +704,7 @@ public class MemoryVersioningTests : IDisposable
             _output.WriteLine($"✓ Successfully reverted to v2, now at v{v4.CurrentVersion}: '{v4.Text}'");
 
             // Step 6: Verify v3 was also preserved (the state before the second revert)
-            var finalVersions = await storage.GetVersionHistory(memoryId, null, CancellationToken.None);
+            var finalVersions = await storage.GetVersionHistory(memoryId, null, TestContext.Current.CancellationToken);
             var v3Snapshot = finalVersions.FirstOrDefault(v => v.VersionNumber == new VersionNumber(3));
             Assert.NotNull(v3Snapshot);
             Assert.Equal("Version 1 content - the original", v3Snapshot.Text);
@@ -713,7 +715,7 @@ public class MemoryVersioningTests : IDisposable
         finally
         {
             // Cleanup
-            await storage.Delete(memoryId, CancellationToken.None);
+            await storage.Delete(memoryId, TestContext.Current.CancellationToken);
         }
     }
 
@@ -767,7 +769,8 @@ public class MemoryVersioningTests : IDisposable
                 "test",
                 new[] { "prune-test" },
                 new Confidence(1.0),
-                "Prune Test V1"
+                "Prune Test V1",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             var memoryId = memory.Id;
             _output.WriteLine($"Created memory at v{memory.CurrentVersion}");
@@ -781,7 +784,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "prune-test" },
                 new Confidence(0.9),
                 "Prune Test V2",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
             Assert.Equal(new VersionNumber(2), v2!.CurrentVersion);
             _output.WriteLine($"Edited to v{v2.CurrentVersion}");
@@ -795,7 +798,7 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "prune-test" },
                 new Confidence(0.8),
                 "Prune Test V3",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
             Assert.Equal(new VersionNumber(3), v3!.CurrentVersion);
             _output.WriteLine($"Edited to v{v3.CurrentVersion}");
@@ -809,13 +812,13 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "prune-test" },
                 new Confidence(0.7),
                 "Prune Test V4",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
             Assert.Equal(new VersionNumber(4), v4!.CurrentVersion);
             _output.WriteLine($"Edited to v{v4.CurrentVersion}");
 
             // At this point we have v1, v2, v3 snapshots. Max is 3, so no pruning yet.
-            var versionsAfter4 = await storage.GetVersionHistory(memoryId, null, CancellationToken.None);
+            var versionsAfter4 = await storage.GetVersionHistory(memoryId, null, TestContext.Current.CancellationToken);
             _output.WriteLine($"After v4: {versionsAfter4.Count} versions in history");
             Assert.Equal(3, versionsAfter4.Count);
 
@@ -828,13 +831,13 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "prune-test" },
                 new Confidence(0.6),
                 "Prune Test V5",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
             Assert.Equal(new VersionNumber(5), v5!.CurrentVersion);
             _output.WriteLine($"Edited to v{v5.CurrentVersion}");
 
             // Verify auto-pruning: should still have only 3 versions (v2, v3, v4 - v1 was pruned)
-            var versionsAfter5 = await storage.GetVersionHistory(memoryId, null, CancellationToken.None);
+            var versionsAfter5 = await storage.GetVersionHistory(memoryId, null, TestContext.Current.CancellationToken);
             _output.WriteLine($"After v5: {versionsAfter5.Count} versions in history");
             foreach (var v in versionsAfter5)
             {
@@ -859,11 +862,11 @@ public class MemoryVersioningTests : IDisposable
                 new[] { "prune-test" },
                 new Confidence(0.5),
                 "Prune Test V6",
-                CancellationToken.None
+                TestContext.Current.CancellationToken
             );
             Assert.Equal(new VersionNumber(6), v6!.CurrentVersion);
 
-            var versionsAfter6 = await storage.GetVersionHistory(memoryId, null, CancellationToken.None);
+            var versionsAfter6 = await storage.GetVersionHistory(memoryId, null, TestContext.Current.CancellationToken);
             Assert.Equal(3, versionsAfter6.Count);
             Assert.DoesNotContain(versionsAfter6, v => v.VersionNumber == new VersionNumber(1));
             Assert.DoesNotContain(versionsAfter6, v => v.VersionNumber == new VersionNumber(2));
@@ -874,7 +877,7 @@ public class MemoryVersioningTests : IDisposable
             _output.WriteLine($"✓ Auto-pruning continues: v2 was automatically pruned");
 
             // Cleanup
-            await storage.Delete(memoryId, CancellationToken.None);
+            await storage.Delete(memoryId, TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -930,7 +933,8 @@ public class MemoryVersioningTests : IDisposable
                 "test",
                 new[] { "no-prune-test" },
                 new Confidence(1.0),
-                "No Prune Test"
+                "No Prune Test",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             var memoryId = memory.Id;
 
@@ -944,12 +948,12 @@ public class MemoryVersioningTests : IDisposable
                     new[] { "no-prune-test" },
                     new Confidence(1.0 - (i * 0.1)),
                     $"No Prune Test V{i}",
-                    CancellationToken.None
+                    TestContext.Current.CancellationToken
                 );
             }
 
             // Verify all 5 version snapshots exist (v1 through v5, v6 is current)
-            var versions = await storage.GetVersionHistory(memoryId, null, CancellationToken.None);
+            var versions = await storage.GetVersionHistory(memoryId, null, TestContext.Current.CancellationToken);
             _output.WriteLine($"Versions with pruning disabled: {versions.Count}");
 
             Assert.Equal(5, versions.Count);
@@ -961,7 +965,7 @@ public class MemoryVersioningTests : IDisposable
             _output.WriteLine($"✓ No pruning when MaxVersionsPerMemory is 0: all {versions.Count} versions retained");
 
             // Cleanup
-            await storage.Delete(memoryId, CancellationToken.None);
+            await storage.Delete(memoryId, TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -969,9 +973,11 @@ public class MemoryVersioningTests : IDisposable
         }
     }
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_serviceProvider as IDisposable)?.Dispose();
-        _dataSource?.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

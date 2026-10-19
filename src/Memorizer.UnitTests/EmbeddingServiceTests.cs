@@ -16,11 +16,11 @@ public class EmbeddingServiceTests
     [Fact]
     public async Task Generate_WhenApiClientThrows_ThrowsInsteadOfReturningRandomVector()
     {
-        var underlying = new HttpRequestException("simulated Ollama 503");
+        HttpRequestException underlying = new HttpRequestException("simulated Ollama 503");
         var service = CreateService(new ThrowingEmbeddingApiClient(underlying));
 
         var thrown = await Assert.ThrowsAsync<EmbeddingGenerationException>(
-            () => service.Generate("some text that should not be persisted with a garbage embedding"));
+            () => service.Generate("some text that should not be persisted with a garbage embedding", TestContext.Current.CancellationToken));
 
         // The original failure must be preserved as the inner exception so callers can diagnose it.
         Assert.Same(underlying, thrown.InnerException);
@@ -35,7 +35,7 @@ public class EmbeddingServiceTests
         var service = CreateService(new ThrowingEmbeddingApiClient(new InvalidOperationException("boom")));
 
         var thrown = await Assert.ThrowsAsync<EmbeddingGenerationException>(
-            () => service.Generate(secret));
+            () => service.Generate(secret, TestContext.Current.CancellationToken));
 
         Assert.DoesNotContain(secret, thrown.Message);
         // Length is safe to include; the raw text is not.
@@ -45,7 +45,7 @@ public class EmbeddingServiceTests
     [Fact]
     public async Task Generate_WhenCallerCancels_PropagatesOperationCanceledException()
     {
-        using var cts = new CancellationTokenSource();
+        using CancellationTokenSource cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
         // Simulate the api client honoring the cancellation token.
@@ -71,7 +71,7 @@ public class EmbeddingServiceTests
 
     private static EmbeddingService CreateService(IEmbeddingApiClient apiClient)
     {
-        var settings = new EmbeddingSettings
+        EmbeddingSettings settings = new EmbeddingSettings
         {
             Provider = ProviderNames.Ollama,
             ApiUrl = new Uri("http://embed.local"),

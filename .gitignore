@@ -421,3 +421,6 @@ FodyWeavers.xsd
 # Stryker.NET mutation testing output
 StrykerOutput/
 **/StrykerOutput/
+
+# CodeGraph files
+.codegraph

@@ -7,8 +7,6 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -17,15 +15,18 @@ namespace Memorizer.IntegrationTests;
 /// Tests parent-child project relationships, safety validations, and cascade operations.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class NestedProjectTests : IDisposable
+public class NestedProjectTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public NestedProjectTests(IntegrationTestFixture fixture, ITestOutputHelper output)
@@ -76,17 +77,17 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create workspace and parent project
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", "For testing nested projects", cancellationToken: default);
-        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent Project", "Parent", parentId: null, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", "For testing nested projects", cancellationToken: TestContext.Current.CancellationToken);
+        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent Project", "Parent", parentId: null, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act: Create child project
         var child = await storage.CreateProjectAsync(
-            workspace.Id,
-            "Child Project",
-            "Child of parent",
-            parentId: parent.Id,
-            cancellationToken: default
-        );
+        workspace.Id,
+        "Child Project",
+        "Child of parent",
+        parentId: parent.Id,
+        cancellationToken: TestContext.Current.CancellationToken
+    );
 
         // Assert
         Assert.NotNull(child);
@@ -96,9 +97,9 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine($"Created child project {child.Id} with parent {parent.Id}");
 
         // Cleanup
-        await storage.DeleteProjectAsync(child.Id, default);
-        await storage.DeleteProjectAsync(parent.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(child.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(parent.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -107,14 +108,14 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: default);
-        var child1 = await storage.CreateProjectAsync(workspace.Id, "Child 1", parentId: parent.Id, cancellationToken: default);
-        var child2 = await storage.CreateProjectAsync(workspace.Id, "Child 2", parentId: parent.Id, cancellationToken: default);
-        var unrelated = await storage.CreateProjectAsync(workspace.Id, "Unrelated Project", cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: TestContext.Current.CancellationToken);
+        var child1 = await storage.CreateProjectAsync(workspace.Id, "Child 1", parentId: parent.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var child2 = await storage.CreateProjectAsync(workspace.Id, "Child 2", parentId: parent.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var unrelated = await storage.CreateProjectAsync(workspace.Id, "Unrelated Project", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act: Query child projects by parent ID
-        var children = await storage.GetProjectsAsync(workspace.Id, parentId: parent.Id, statusFilter: null, cancellationToken: default);
+        var children = await storage.GetProjectsAsync(workspace.Id, parentId: parent.Id, statusFilter: null, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, children.Count);
@@ -126,11 +127,11 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine($"Parent {parent.Id} has {children.Count} children: {string.Join(", ", children.Select(c => c.Name))}");
 
         // Cleanup
-        await storage.DeleteProjectAsync(child1.Id, default);
-        await storage.DeleteProjectAsync(child2.Id, default);
-        await storage.DeleteProjectAsync(unrelated.Id, default);
-        await storage.DeleteProjectAsync(parent.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(child1.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(child2.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(unrelated.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(parent.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -139,10 +140,10 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create 3-level hierarchy (Epic → Feature → Task)
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var epic = await storage.CreateProjectAsync(workspace.Id, "Epic", cancellationToken: default);
-        var feature = await storage.CreateProjectAsync(workspace.Id, "Feature", parentId: epic.Id, cancellationToken: default);
-        var task = await storage.CreateProjectAsync(workspace.Id, "Task", parentId: feature.Id, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var epic = await storage.CreateProjectAsync(workspace.Id, "Epic", cancellationToken: TestContext.Current.CancellationToken);
+        var feature = await storage.CreateProjectAsync(workspace.Id, "Feature", parentId: epic.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var task = await storage.CreateProjectAsync(workspace.Id, "Task", parentId: feature.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(epic.ParentId);
@@ -152,10 +153,10 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine($"Created 3-level hierarchy: Epic {epic.Id} → Feature {feature.Id} → Task {task.Id}");
 
         // Cleanup (reverse order due to CASCADE)
-        await storage.DeleteProjectAsync(task.Id, default);
-        await storage.DeleteProjectAsync(feature.Id, default);
-        await storage.DeleteProjectAsync(epic.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(task.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(feature.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(epic.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     #endregion
@@ -168,7 +169,7 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
         var fakeParentId = ProjectId.New();
 
         // Act & Assert
@@ -177,7 +178,7 @@ public class NestedProjectTests : IDisposable
                 workspace.Id,
                 "Child Project",
                 parentId: fakeParentId,
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             )
         );
 
@@ -187,7 +188,7 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine($"Correctly rejected non-existent parent: {exception.Message}");
 
         // Cleanup
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -196,9 +197,9 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create two workspaces with projects
-        var workspace1 = await storage.CreateWorkspaceAsync("Workspace 1", cancellationToken: default);
-        var workspace2 = await storage.CreateWorkspaceAsync("Workspace 2", cancellationToken: default);
-        var parent = await storage.CreateProjectAsync(workspace1.Id, "Parent in WS1", cancellationToken: default);
+        var workspace1 = await storage.CreateWorkspaceAsync("Workspace 1", cancellationToken: TestContext.Current.CancellationToken);
+        var workspace2 = await storage.CreateWorkspaceAsync("Workspace 2", cancellationToken: TestContext.Current.CancellationToken);
+        var parent = await storage.CreateProjectAsync(workspace1.Id, "Parent in WS1", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act & Assert: Try to create child in workspace2 with parent from workspace1
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
@@ -206,7 +207,7 @@ public class NestedProjectTests : IDisposable
                 workspace2.Id,
                 "Child in WS2",
                 parentId: parent.Id,
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             )
         );
 
@@ -215,9 +216,9 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine($"Correctly rejected cross-workspace parent: {exception.Message}");
 
         // Cleanup
-        await storage.DeleteProjectAsync(parent.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace1.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace2.Id, default);
+        await storage.DeleteProjectAsync(parent.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace1.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace2.Id, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -229,8 +230,8 @@ public class NestedProjectTests : IDisposable
         // The database CASCADE constraint would prevent actual cycles, but we want
         // to catch this at the application layer for better error messages
 
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var projectA = await storage.CreateProjectAsync(workspace.Id, "Project A", cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var projectA = await storage.CreateProjectAsync(workspace.Id, "Project A", cancellationToken: TestContext.Current.CancellationToken);
 
         // Since we can't actually create a cycle without database-level manipulation,
         // this test documents the expected behavior. The WouldCreateCycleAsync method
@@ -239,8 +240,8 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine("Circular reference prevention is implemented in WouldCreateCycleAsync");
 
         // Cleanup
-        await storage.DeleteProjectAsync(projectA.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(projectA.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
     }
 
     #endregion
@@ -253,9 +254,9 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create parent with child project
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: default);
-        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: TestContext.Current.CancellationToken);
+        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Create memory in child project
         var memory = await storage.StoreMemory(
@@ -267,30 +268,30 @@ public class NestedProjectTests : IDisposable
             title: "Child Memory",
             owner: MemoryOwner.ForProject(child.Id),
             archetype: ArchetypeEnum.Document,
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         _output.WriteLine($"Created parent {parent.Id}, child {child.Id}, and memory {memory.Id}");
 
         // Act: Delete parent (should cascade to child)
-        await storage.DeleteProjectAsync(parent.Id, default);
+        await storage.DeleteProjectAsync(parent.Id, TestContext.Current.CancellationToken);
 
         // Assert: Child should be deleted
-        var deletedChild = await storage.GetProjectAsync(child.Id, default);
+        var deletedChild = await storage.GetProjectAsync(child.Id, TestContext.Current.CancellationToken);
         Assert.Null(deletedChild);
 
         _output.WriteLine($"CASCADE delete successfully removed child {child.Id}");
 
         // Assert: Memory should be moved to Unfiled
-        var movedMemory = await storage.Get(memory.Id);
+        var movedMemory = await storage.Get(memory.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(movedMemory);
         Assert.True(movedMemory.Owner.IsUnfiled);
 
         _output.WriteLine($"Memory {memory.Id} moved to Unfiled workspace");
 
         // Cleanup
-        await storage.Delete(memory.Id);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.Delete(memory.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -299,19 +300,19 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create 3-level hierarchy
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var level1 = await storage.CreateProjectAsync(workspace.Id, "Level 1", cancellationToken: default);
-        var level2 = await storage.CreateProjectAsync(workspace.Id, "Level 2", parentId: level1.Id, cancellationToken: default);
-        var level3 = await storage.CreateProjectAsync(workspace.Id, "Level 3", parentId: level2.Id, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var level1 = await storage.CreateProjectAsync(workspace.Id, "Level 1", cancellationToken: TestContext.Current.CancellationToken);
+        var level2 = await storage.CreateProjectAsync(workspace.Id, "Level 2", parentId: level1.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var level3 = await storage.CreateProjectAsync(workspace.Id, "Level 3", parentId: level2.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Created 3-level hierarchy: {level1.Id} → {level2.Id} → {level3.Id}");
 
         // Act: Delete level1 (should cascade delete level2 and level3)
-        await storage.DeleteProjectAsync(level1.Id, default);
+        await storage.DeleteProjectAsync(level1.Id, TestContext.Current.CancellationToken);
 
         // Assert: All children should be deleted
-        var deletedLevel2 = await storage.GetProjectAsync(level2.Id, default);
-        var deletedLevel3 = await storage.GetProjectAsync(level3.Id, default);
+        var deletedLevel2 = await storage.GetProjectAsync(level2.Id, TestContext.Current.CancellationToken);
+        var deletedLevel3 = await storage.GetProjectAsync(level3.Id, TestContext.Current.CancellationToken);
 
         Assert.Null(deletedLevel2);
         Assert.Null(deletedLevel3);
@@ -319,7 +320,7 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine("CASCADE delete successfully removed all nested children");
 
         // Cleanup
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -328,9 +329,9 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: default);
-        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: TestContext.Current.CancellationToken);
+        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Create multiple memories in child project
         var memoryIds = new List<MemoryId>();
@@ -345,7 +346,7 @@ public class NestedProjectTests : IDisposable
                 title: $"Child Memory {i}",
                 owner: MemoryOwner.ForProject(child.Id),
                 archetype: ArchetypeEnum.Document,
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
             memoryIds.Add(memory.Id);
         }
@@ -353,12 +354,12 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine($"Created {memoryIds.Count} memories in child project");
 
         // Act: Delete parent (cascades to child)
-        await storage.DeleteProjectAsync(parent.Id, default);
+        await storage.DeleteProjectAsync(parent.Id, TestContext.Current.CancellationToken);
 
         // Assert: All memories should be in Unfiled
         foreach (var memoryId in memoryIds)
         {
-            var memory = await storage.Get(memoryId);
+            var memory = await storage.Get(memoryId, TestContext.Current.CancellationToken);
             Assert.NotNull(memory);
             Assert.True(memory.Owner.IsUnfiled);
         }
@@ -368,9 +369,9 @@ public class NestedProjectTests : IDisposable
         // Cleanup
         foreach (var memoryId in memoryIds)
         {
-            await storage.Delete(memoryId);
+            await storage.Delete(memoryId, TestContext.Current.CancellationToken);
         }
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
     }
 
     #endregion
@@ -383,9 +384,9 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: default);
-        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: TestContext.Current.CancellationToken);
+        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act: Store memories in both parent and child
         var parentMemory = await storage.StoreMemory(
@@ -397,7 +398,7 @@ public class NestedProjectTests : IDisposable
             title: "Parent Memory",
             owner: MemoryOwner.ForProject(parent.Id),
             archetype: ArchetypeEnum.Document,
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         var childMemory = await storage.StoreMemory(
@@ -409,7 +410,7 @@ public class NestedProjectTests : IDisposable
             title: "Child Memory",
             owner: MemoryOwner.ForProject(child.Id),
             archetype: ArchetypeEnum.Document,
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Assert
@@ -417,8 +418,8 @@ public class NestedProjectTests : IDisposable
         Assert.Equal(child.Id, childMemory.Owner.ProjectId);
 
         // Verify memory counts
-        var parentCount = await storage.GetMemoryCountByOwnerAsync(MemoryOwner.ForProject(parent.Id), default);
-        var childCount = await storage.GetMemoryCountByOwnerAsync(MemoryOwner.ForProject(child.Id), default);
+        var parentCount = await storage.GetMemoryCountByOwnerAsync(MemoryOwner.ForProject(parent.Id), cancellationToken: TestContext.Current.CancellationToken);
+        var childCount = await storage.GetMemoryCountByOwnerAsync(MemoryOwner.ForProject(child.Id), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, parentCount);
         Assert.Equal(1, childCount);
@@ -426,11 +427,11 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine($"Parent has {parentCount} memory, child has {childCount} memory");
 
         // Cleanup
-        await storage.Delete(parentMemory.Id);
-        await storage.Delete(childMemory.Id);
-        await storage.DeleteProjectAsync(child.Id, default);
-        await storage.DeleteProjectAsync(parent.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.Delete(parentMemory.Id, TestContext.Current.CancellationToken);
+        await storage.Delete(childMemory.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(child.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(parent.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -439,9 +440,9 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: default);
-        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: TestContext.Current.CancellationToken);
+        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Store memories in both
         var parentMemory = await storage.StoreMemory(
@@ -453,7 +454,7 @@ public class NestedProjectTests : IDisposable
             title: "Parent Memory",
             owner: MemoryOwner.ForProject(parent.Id),
             archetype: ArchetypeEnum.Document,
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         var childMemory = await storage.StoreMemory(
@@ -465,7 +466,7 @@ public class NestedProjectTests : IDisposable
             title: "Child Memory",
             owner: MemoryOwner.ForProject(child.Id),
             archetype: ArchetypeEnum.Document,
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Act: Query parent memories
@@ -473,7 +474,7 @@ public class NestedProjectTests : IDisposable
             MemoryOwner.ForProject(parent.Id),
             page: 1,
             pageSize: 10,
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         // Assert: Only parent memory returned, not child
@@ -483,11 +484,11 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine("GetMemoriesByOwner correctly isolates project memories (doesn't aggregate children)");
 
         // Cleanup
-        await storage.Delete(parentMemory.Id);
-        await storage.Delete(childMemory.Id);
-        await storage.DeleteProjectAsync(child.Id, default);
-        await storage.DeleteProjectAsync(parent.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.Delete(parentMemory.Id, TestContext.Current.CancellationToken);
+        await storage.Delete(childMemory.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(child.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(parent.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
     }
 
     #endregion
@@ -500,17 +501,17 @@ public class NestedProjectTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: default);
-        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var parent = await storage.CreateProjectAsync(workspace.Id, "Parent", cancellationToken: TestContext.Current.CancellationToken);
+        var child = await storage.CreateProjectAsync(workspace.Id, "Child", parentId: parent.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act: Set parent to completed, child to active
-        await storage.UpdateProjectAsync(parent.Id, status: ProjectStatusEnum.Completed, cancellationToken: default);
-        await storage.UpdateProjectAsync(child.Id, status: ProjectStatusEnum.Active, cancellationToken: default);
+        await storage.UpdateProjectAsync(parent.Id, status: ProjectStatusEnum.Completed, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.UpdateProjectAsync(child.Id, status: ProjectStatusEnum.Active, cancellationToken: TestContext.Current.CancellationToken);
 
         // Reload
-        var updatedParent = await storage.GetProjectAsync(parent.Id, default);
-        var updatedChild = await storage.GetProjectAsync(child.Id, default);
+        var updatedParent = await storage.GetProjectAsync(parent.Id, TestContext.Current.CancellationToken);
+        var updatedChild = await storage.GetProjectAsync(child.Id, TestContext.Current.CancellationToken);
 
         // Assert: Statuses are independent
         Assert.Equal(ProjectStatusEnum.Completed, updatedParent!.Status);
@@ -519,9 +520,9 @@ public class NestedProjectTests : IDisposable
         _output.WriteLine($"Parent status: {updatedParent.Status}, Child status: {updatedChild.Status} (independent)");
 
         // Cleanup
-        await storage.DeleteProjectAsync(child.Id, default);
-        await storage.DeleteProjectAsync(parent.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(child.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(parent.Id, TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
     }
 
     #endregion

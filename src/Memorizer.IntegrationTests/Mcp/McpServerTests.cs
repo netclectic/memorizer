@@ -1,8 +1,8 @@
 using Memorizer.IntegrationTests.Mcp;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -26,8 +26,12 @@ public sealed class McpServerTests : IAsyncLifetime
         _output = output;
     }
 
-    public Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
+        // Reset the shared DB before the app boots so its InitializationService runs
+        // against a clean database.
+        await TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
@@ -42,13 +46,12 @@ public sealed class McpServerTests : IAsyncLifetime
                     });
                 });
             });
-        return Task.CompletedTask;
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _factory?.Dispose();
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     private Task<McpTestClient> ConnectAsync(CancellationToken ct) =>
@@ -57,11 +60,11 @@ public sealed class McpServerTests : IAsyncLifetime
     [Fact]
     public async Task Server_advertises_memory_and_workspace_tools()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        await using var mcp = await ConnectAsync(cts.Token);
+        using CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using McpTestClient mcp = await ConnectAsync(cts.Token);
 
-        var tools = await mcp.Client.ListToolsAsync(cancellationToken: cts.Token);
-        var names = tools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        IList<McpClientTool> tools = await mcp.Client.ListToolsAsync(cancellationToken: cts.Token);
+        HashSet<string> names = tools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         _output.WriteLine($"Advertised tools ({names.Count}): {string.Join(", ", names.OrderBy(n => n))}");
 
         Assert.NotEmpty(tools);
@@ -76,13 +79,13 @@ public sealed class McpServerTests : IAsyncLifetime
     [Fact]
     public async Task Stateless_server_handles_independent_connections()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        using CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 
         // Two independent handshakes against the stateless server. Each connection is a
         // separate client with no shared server-side session; both must succeed on their own.
-        await using (var first = await ConnectAsync(cts.Token))
+        await using (McpTestClient first = await ConnectAsync(cts.Token))
         {
-            var result = await first.Client.CallToolAsync(
+            CallToolResult result = await first.Client.CallToolAsync(
                 "get_workspace",
                 new Dictionary<string, object?>(),
                 cancellationToken: cts.Token);
@@ -91,9 +94,9 @@ public sealed class McpServerTests : IAsyncLifetime
             Assert.NotEmpty(result.Content);
         }
 
-        await using (var second = await ConnectAsync(cts.Token))
+        await using (McpTestClient second = await ConnectAsync(cts.Token))
         {
-            var tools = await second.Client.ListToolsAsync(cancellationToken: cts.Token);
+            IList<McpClientTool> tools = await second.Client.ListToolsAsync(cancellationToken: cts.Token);
             Assert.NotEmpty(tools);
         }
     }
@@ -101,11 +104,11 @@ public sealed class McpServerTests : IAsyncLifetime
     [Fact]
     public async Task Server_advertises_usage_prompts()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        await using var mcp = await ConnectAsync(cts.Token);
+        using CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using McpTestClient mcp = await ConnectAsync(cts.Token);
 
-        var prompts = await mcp.Client.ListPromptsAsync(cancellationToken: cts.Token);
-        var names = prompts.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        IList<McpClientPrompt> prompts = await mcp.Client.ListPromptsAsync(cancellationToken: cts.Token);
+        HashSet<string> names = prompts.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         _output.WriteLine($"Advertised prompts ({names.Count}): {string.Join(", ", names.OrderBy(n => n))}");
 
         Assert.Contains("memorizer_overview", names);
@@ -114,13 +117,13 @@ public sealed class McpServerTests : IAsyncLifetime
         Assert.Contains("start_project", names);
 
         // Fetch a parameterized prompt and confirm it renders the argument and the tool guidance.
-        var result = await mcp.Client.GetPromptAsync(
+        GetPromptResult result = await mcp.Client.GetPromptAsync(
             "find_context",
             new Dictionary<string, object?> { ["topic"] = "database pooling" },
             cancellationToken: cts.Token);
 
         Assert.NotEmpty(result.Messages);
-        var text = string.Join("\n", result.Messages.Select(m => (m.Content as TextContentBlock)?.Text ?? ""));
+        string text = string.Join("\n", result.Messages.Select(m => (m.Content as TextContentBlock)?.Text ?? ""));
         Assert.Contains("database pooling", text);
         Assert.Contains("search_memories", text);
     }
@@ -128,25 +131,25 @@ public sealed class McpServerTests : IAsyncLifetime
     [Fact]
     public async Task Server_exposes_workspace_tree_resource()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        await using var mcp = await ConnectAsync(cts.Token);
+        using CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using McpTestClient mcp = await ConnectAsync(cts.Token);
 
         // The workspace tree resource must appear in the resource list.
-        var resources = await mcp.Client.ListResourcesAsync(cancellationToken: cts.Token);
-        var uris = resources.Select(r => r.Uri).ToHashSet();
+        IList<McpClientResource> resources = await mcp.Client.ListResourcesAsync(cancellationToken: cts.Token);
+        HashSet<string> uris = resources.Select(r => r.Uri).ToHashSet();
         _output.WriteLine($"Resources: {string.Join(", ", uris)}");
         Assert.Contains("memorizer://workspaces", uris);
 
         // Create a workspace via a tool, then confirm the resource reflects it (unique name
         // to stay isolated from other tests sharing the container).
-        var workspaceName = $"McpResourceTest-{Guid.NewGuid():N}";
+        string workspaceName = $"McpResourceTest-{Guid.NewGuid():N}";
         await mcp.Client.CallToolAsync(
             "create_workspace",
             new Dictionary<string, object?> { ["name"] = workspaceName },
             cancellationToken: cts.Token);
 
-        var read = await mcp.Client.ReadResourceAsync("memorizer://workspaces", cancellationToken: cts.Token);
-        var contents = string.Join("\n", read.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+        ReadResourceResult read = await mcp.Client.ReadResourceAsync("memorizer://workspaces", cancellationToken: cts.Token);
+        string contents = string.Join("\n", read.Contents.OfType<TextResourceContents>().Select(c => c.Text));
         Assert.Contains(workspaceName, contents);
     }
 

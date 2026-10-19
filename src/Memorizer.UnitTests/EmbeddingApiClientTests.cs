@@ -1,11 +1,11 @@
-using System.Net;
-using System.Text;
-using System.Text.Json;
 using Memorizer.Models;
 using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 
 namespace Memorizer.UnitTests;
 
@@ -26,7 +26,7 @@ public class EmbeddingApiClientTests
             Model = "all-minilm"
         });
 
-        var result = await client.GenerateAsync("all-minilm", "hello world");
+        var result = await client.GenerateAsync("all-minilm", "hello world", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal([0.1f, 0.2f, 0.3f], result);
         Assert.NotNull(handler.LastRequest);
@@ -58,7 +58,7 @@ public class EmbeddingApiClientTests
             ApiKey = "sk-test-key"
         });
 
-        var result = await client.GenerateAsync("text-embedding-3-small", "hello world");
+        var result = await client.GenerateAsync("text-embedding-3-small", "hello world", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal([0.4f, 0.5f, 0.6f], result);
         Assert.NotNull(handler.LastRequest);
@@ -90,7 +90,7 @@ public class EmbeddingApiClientTests
             ApiKey = null
         });
 
-        await client.GenerateAsync("local-model", "probe");
+        await client.GenerateAsync("local-model", "probe", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Null(handler.LastRequest!.Headers.Authorization);
     }
@@ -111,7 +111,7 @@ public class EmbeddingApiClientTests
             ApiKey = "sk-should-not-leak"
         });
 
-        await client.GenerateAsync("all-minilm", "probe");
+        await client.GenerateAsync("all-minilm", "probe", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Null(handler.LastRequest!.Headers.Authorization);
     }
@@ -131,7 +131,7 @@ public class EmbeddingApiClientTests
             Model = "text-embedding-3-small"
         });
 
-        await client.GenerateAsync("text-embedding-3-small", "x");
+        await client.GenerateAsync("text-embedding-3-small", "x", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("/v1/embeddings", handler.LastRequest!.RequestUri!.AbsolutePath);
     }
@@ -148,7 +148,7 @@ public class EmbeddingApiClientTests
             Model = "m"
         });
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.GenerateAsync("m", "t"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.GenerateAsync("m", "t", cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public class EmbeddingApiClientTests
             Model = "m"
         });
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.GenerateAsync("m", "t"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.GenerateAsync("m", "t", cancellationToken: TestContext.Current.CancellationToken));
     }
 
     private static EmbeddingApiClient CreateClient(HttpMessageHandler handler, EmbeddingSettings settings)

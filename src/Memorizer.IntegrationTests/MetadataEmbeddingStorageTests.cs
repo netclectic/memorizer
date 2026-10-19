@@ -6,20 +6,22 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
 [Collection(nameof(IntegrationTestCollection))]
-public class MetadataEmbeddingStorageTests : IDisposable
+public class MetadataEmbeddingStorageTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public MetadataEmbeddingStorageTests(IntegrationTestFixture fixture, ITestOutputHelper output)
@@ -31,8 +33,8 @@ public class MetadataEmbeddingStorageTests : IDisposable
 
     private IServiceProvider CreateServices()
     {
-        var services = new ServiceCollection();
-        
+        ServiceCollection services = new ServiceCollection();
+
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -55,10 +57,10 @@ public class MetadataEmbeddingStorageTests : IDisposable
             Model = "all-minilm",
             Timeout = TimeSpan.FromMinutes(1)
         });
-        
+
         services.AddMemorizer();
         services.AddLogging();
-        
+
         return services.BuildServiceProvider();
     }
 
@@ -66,31 +68,32 @@ public class MetadataEmbeddingStorageTests : IDisposable
     public async Task SearchWithMetadataEmbedding_WorksWithRealEmbeddings()
     {
         // Arrange
-        var storage = _services.GetRequiredService<IStorage>();
-        
+        IStorage storage = _services.GetRequiredService<IStorage>();
+
         // Test that the SearchWithMetadataEmbedding method works functionally
         // This test verifies:
         // 1. Metadata embeddings are generated during storage
         // 2. SearchWithMetadataEmbedding method executes without errors
         // 3. Results are returned in the expected format
         // 4. Similarity scores are calculated correctly
-        
-        var uniqueId = Guid.NewGuid().ToString("N")[..8];
-        var uniqueTitle = $"MetadataEmbeddingTest-{uniqueId}";
-        var uniqueTags = new[] { $"test-{uniqueId}", "metadata-embedding", "integration-test" };
-        
-        var testMemory = await storage.StoreMemory(
+
+        string uniqueId = Guid.NewGuid().ToString("N")[..8];
+        string uniqueTitle = $"MetadataEmbeddingTest-{uniqueId}";
+        string[] uniqueTags = new[] { $"test-{uniqueId}", "metadata-embedding", "integration-test" };
+
+        Memory testMemory = await storage.StoreMemory(
             "test",
             "Test content for metadata search functionality verification",
             "test",
             uniqueTags,
             new Confidence(1.0),
-            uniqueTitle);
+            uniqueTitle,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Stored memory with ID: {testMemory.Id}, Title: '{uniqueTitle}'");
 
         // Verify the memory was stored correctly with metadata embedding
-        var storedMemory = await storage.Get(testMemory.Id);
+        Memory? storedMemory = await storage.Get(testMemory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(storedMemory);
         Assert.Equal(uniqueTitle, storedMemory.Title);
         Assert.NotNull(storedMemory.EmbeddingMetadata);
@@ -98,38 +101,40 @@ public class MetadataEmbeddingStorageTests : IDisposable
 
         // Test that SearchWithMetadataEmbedding method works functionally
         // Use a generic search term that should return some results from the database
-        var results = await storage.SearchWithMetadataEmbedding(
+        List<Memory> results = await storage.SearchWithMetadataEmbedding(
             "test",
             limit: 10,
-            new SimilarityScore(0.1));
+            new SimilarityScore(0.1),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Search for 'test' returned {results.Count} results");
 
         // Verify the method works correctly
         Assert.NotNull(results);
-        
+
         // If we have results, verify they have the expected structure
         if (results.Count > 0)
         {
-            var firstResult = results[0];
+            Memory firstResult = results[0];
             Assert.NotNull(firstResult.Title);
             Assert.True(firstResult.Similarity.HasValue);
             Assert.True(firstResult.Similarity >= 0.0 && firstResult.Similarity <= 1.0);
-            
+
             _output.WriteLine($"✅ First result: ID={firstResult.Id}, Title='{firstResult.Title}', Similarity={firstResult.Similarity:F3}");
         }
 
         // Test with a more specific search that's likely to return fewer results
-        var specificResults = await storage.SearchWithMetadataEmbedding(
+        List<Memory> specificResults = await storage.SearchWithMetadataEmbedding(
             uniqueTitle,
             limit: 5,
-            new SimilarityScore(0.1));
+            new SimilarityScore(0.1),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Search for unique title returned {specificResults.Count} results");
         Assert.NotNull(specificResults);
 
         // Verify all results have valid similarity scores
-        foreach (var result in specificResults.Take(3))
+        foreach (Memory? result in specificResults.Take(3))
         {
             Assert.True(result.Similarity.HasValue);
             Assert.True(result.Similarity >= 0.0 && result.Similarity <= 1.0);
@@ -143,10 +148,10 @@ public class MetadataEmbeddingStorageTests : IDisposable
     public async Task GetMemoriesWithoutMetadataEmbeddings_CanFindMemoriesForMigration()
     {
         // Arrange
-        var storage = _services.GetRequiredService<IStorage>();
+        IStorage storage = _services.GetRequiredService<IStorage>();
 
         // Act - this method is used by the migration actor
-        var memories = await storage.GetMemoriesWithoutMetadataEmbeddings(10);
+        List<Memory> memories = await storage.GetMemoriesWithoutMetadataEmbeddings(10, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert - method works without throwing (specific results depend on DB state)
         Assert.NotNull(memories);
@@ -156,42 +161,44 @@ public class MetadataEmbeddingStorageTests : IDisposable
     public async Task UpdateMemoryOwner_CanMoveMemoryBetweenWorkspacesAndUnfiled()
     {
         // Arrange
-        var storage = _services.GetRequiredService<IStorage>();
+        IStorage storage = _services.GetRequiredService<IStorage>();
 
-        var uniqueId = Guid.NewGuid().ToString("N")[..8];
-        var uniqueTitle = $"OwnerUpdateTest-{uniqueId}";
+        string uniqueId = Guid.NewGuid().ToString("N")[..8];
+        string uniqueTitle = $"OwnerUpdateTest-{uniqueId}";
 
         // Create a test memory (starts as Unfiled by default)
-        var testMemory = await storage.StoreMemory(
+        Memory testMemory = await storage.StoreMemory(
             "test",
             "Test content for owner update functionality verification",
             "test",
             new[] { $"test-{uniqueId}", "owner-test" },
             new Confidence(1.0),
-            uniqueTitle);
+            uniqueTitle,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Created memory with ID: {testMemory.Id}, Title: '{uniqueTitle}'");
 
         // Verify the memory starts as Unfiled
-        var initialMemory = await storage.Get(testMemory.Id);
+        Memory? initialMemory = await storage.Get(testMemory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(initialMemory);
         Assert.True(initialMemory.Owner.IsUnfiled, "Memory should start as Unfiled");
         _output.WriteLine($"✅ Memory starts as Unfiled: Owner={initialMemory.Owner}");
 
         // Create a test workspace to move the memory into
-        var workspaceName = $"TestWorkspace-{uniqueId}";
-        var workspace = await storage.CreateWorkspaceAsync(
+        string workspaceName = $"TestWorkspace-{uniqueId}";
+        Workspace workspace = await storage.CreateWorkspaceAsync(
             workspaceName,
-            "Test workspace for owner update test");
+            "Test workspace for owner update test",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         _output.WriteLine($"Created workspace: ID={workspace.Id}, Name='{workspace.Name}'");
 
         // Act 1: Move memory to workspace
-        var workspaceOwner = MemoryOwner.ForWorkspace(workspace.Id);
-        await storage.UpdateMemoryOwner(testMemory.Id, workspaceOwner);
+        MemoryOwner workspaceOwner = MemoryOwner.ForWorkspace(workspace.Id);
+        await storage.UpdateMemoryOwner(testMemory.Id, workspaceOwner, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert 1: Verify the memory is now owned by the workspace
-        var movedMemory = await storage.Get(testMemory.Id);
+        Memory? movedMemory = await storage.Get(testMemory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(movedMemory);
         Assert.Equal(OwnerTypeEnum.Workspace, movedMemory.Owner.Type);
         Assert.Equal(workspace.Id.Value, movedMemory.Owner.Id);
@@ -199,10 +206,10 @@ public class MetadataEmbeddingStorageTests : IDisposable
         _output.WriteLine($"✅ Memory moved to workspace: Owner={movedMemory.Owner}");
 
         // Act 2: Move memory back to Unfiled
-        await storage.UpdateMemoryOwner(testMemory.Id, MemoryOwner.Unfiled);
+        await storage.UpdateMemoryOwner(testMemory.Id, MemoryOwner.Unfiled, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert 2: Verify the memory is back to Unfiled
-        var unfiledMemory = await storage.Get(testMemory.Id);
+        Memory? unfiledMemory = await storage.Get(testMemory.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(unfiledMemory);
         Assert.True(unfiledMemory.Owner.IsUnfiled, "Memory should be back to Unfiled");
         _output.WriteLine($"✅ Memory moved back to Unfiled: Owner={unfiledMemory.Owner}");
@@ -228,19 +235,20 @@ public class MetadataEmbeddingStorageTests : IDisposable
     [Fact]
     public async Task SearchWithMetadataEmbedding_ZeroThreshold_ReturnsLowSimilarityMemory()
     {
-        var storage = _services.GetRequiredService<IStorage>();
+        IStorage storage = _services.GetRequiredService<IStorage>();
 
-        var nonce = Guid.NewGuid().ToString("N")[..12];
-        var unrelatedNonce = Guid.NewGuid().ToString("N")[..12];
+        string nonce = Guid.NewGuid().ToString("N")[..12];
+        string unrelatedNonce = Guid.NewGuid().ToString("N")[..12];
 
         // Scope everything to a fresh workspace so only our two memories are candidates.
-        var workspace = await storage.CreateWorkspaceAsync(
+        Workspace workspace = await storage.CreateWorkspaceAsync(
             $"ZeroThresholdWs-{nonce}",
-            "Workspace for the no-threshold regression test");
-        var wsOwner = MemoryOwner.ForWorkspace(workspace.Id);
+            "Workspace for the no-threshold regression test",
+            cancellationToken: TestContext.Current.CancellationToken);
+        MemoryOwner wsOwner = MemoryOwner.ForWorkspace(workspace.Id);
 
         // Query == target title => guaranteed strong (near-1.0) match.
-        var query = $"quantum orchid saxophone {nonce}";
+        string query = $"quantum orchid saxophone {nonce}";
 
         Memory? target = null;
         Memory? unrelated = null;
@@ -254,7 +262,7 @@ public class MetadataEmbeddingStorageTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: query,
                 owner: wsOwner,
-                cancellationToken: default);
+                cancellationToken: TestContext.Current.CancellationToken);
 
             // Deliberately dissimilar topic with a different nonce => low / near-orthogonal similarity.
             unrelated = await storage.StoreMemory(
@@ -265,11 +273,11 @@ public class MetadataEmbeddingStorageTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: $"municipal drainage culvert inspection schedule {unrelatedNonce}",
                 owner: wsOwner,
-                cancellationToken: default);
+                cancellationToken: TestContext.Current.CancellationToken);
 
             // 1) Positive threshold: the unrelated memory is filtered out (proves it is below threshold),
             //    while the exact-match target still passes.
-            var thresholded = await storage.SearchWithMetadataEmbedding(
+            List<Memory> thresholded = await storage.SearchWithMetadataEmbedding(
                 query: query,
                 limit: 20,
                 minSimilarity: new SimilarityScore(0.6),
@@ -279,15 +287,15 @@ public class MetadataEmbeddingStorageTests : IDisposable
                 includeArchived: false,
                 includeSystem: false,
                 workspaceId: workspace.Id,
-                cancellationToken: default);
+                cancellationToken: TestContext.Current.CancellationToken);
 
-            var thresholdedIds = thresholded.Select(m => m.Id).ToHashSet();
+            HashSet<MemoryId> thresholdedIds = thresholded.Select(m => m.Id).ToHashSet();
             _output.WriteLine($"Positive-threshold search returned {thresholded.Count} results");
             Assert.Contains(target.Id, thresholdedIds);
             Assert.DoesNotContain(unrelated.Id, thresholdedIds);
 
             // 2) Zero threshold ("no threshold"): the SAME low-similarity memory IS now returned.
-            var noThreshold = await storage.SearchWithMetadataEmbedding(
+            List<Memory> noThreshold = await storage.SearchWithMetadataEmbedding(
                 query: query,
                 limit: 20,
                 minSimilarity: new SimilarityScore(0.0),
@@ -297,18 +305,18 @@ public class MetadataEmbeddingStorageTests : IDisposable
                 includeArchived: false,
                 includeSystem: false,
                 workspaceId: workspace.Id,
-                cancellationToken: default);
+                cancellationToken: TestContext.Current.CancellationToken);
 
-            var noThresholdIds = noThreshold.Select(m => m.Id).ToHashSet();
+            HashSet<MemoryId> noThresholdIds = noThreshold.Select(m => m.Id).ToHashSet();
             _output.WriteLine($"Zero-threshold search returned {noThreshold.Count} results");
             Assert.Contains(target.Id, noThresholdIds);
             Assert.Contains(unrelated.Id, noThresholdIds);
         }
         finally
         {
-            if (target != null) await storage.Delete(target.Id, default);
-            if (unrelated != null) await storage.Delete(unrelated.Id, default);
-            await storage.DeleteWorkspaceAsync(workspace.Id, default);
+            if (target != null) await storage.Delete(target.Id, TestContext.Current.CancellationToken);
+            if (unrelated != null) await storage.Delete(unrelated.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -321,13 +329,13 @@ public class MetadataEmbeddingStorageTests : IDisposable
     [Fact]
     public async Task SearchWithFullEmbedding_ZeroThreshold_ReturnsLowSimilarityMemory()
     {
-        var storage = _services.GetRequiredService<IStorage>();
+        IStorage storage = _services.GetRequiredService<IStorage>();
 
-        var nonce = Guid.NewGuid().ToString("N")[..12];
-        var unrelatedNonce = Guid.NewGuid().ToString("N")[..12];
+        string nonce = Guid.NewGuid().ToString("N")[..12];
+        string unrelatedNonce = Guid.NewGuid().ToString("N")[..12];
 
         // Query == target title => guaranteed strong match.
-        var query = $"holographic marmalade turbine {nonce}";
+        string query = $"holographic marmalade turbine {nonce}";
 
         Memory? target = null;
         Memory? unrelated = null;
@@ -341,7 +349,7 @@ public class MetadataEmbeddingStorageTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: query,
                 owner: null,
-                cancellationToken: default);
+                cancellationToken: TestContext.Current.CancellationToken);
 
             unrelated = await storage.StoreMemory(
                 type: "reference",
@@ -351,40 +359,40 @@ public class MetadataEmbeddingStorageTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: $"quarterly hydroelectric dam sediment removal report {unrelatedNonce}",
                 owner: null,
-                cancellationToken: default);
+                cancellationToken: TestContext.Current.CancellationToken);
 
             // 1) Positive threshold: the unrelated memory is filtered out.
-            var thresholded = await storage.SearchWithFullEmbedding(
+            List<Memory> thresholded = await storage.SearchWithFullEmbedding(
                 query: query,
                 limit: 50,
                 minSimilarity: new SimilarityScore(0.6),
                 filterTags: null,
                 includeArchived: false,
-                cancellationToken: default);
+                cancellationToken: TestContext.Current.CancellationToken);
 
-            var thresholdedIds = thresholded.Select(m => m.Id).ToHashSet();
+            HashSet<MemoryId> thresholdedIds = thresholded.Select(m => m.Id).ToHashSet();
             Assert.Contains(target.Id, thresholdedIds);
             Assert.DoesNotContain(unrelated.Id, thresholdedIds);
 
             // 2) Zero threshold ("no threshold"): the unrelated memory IS returned among the nearest,
             //    proving the distance predicate was omitted. (The target, an exact match, is the very
             //    nearest, so both land inside a generous limit even on a shared database.)
-            var noThreshold = await storage.SearchWithFullEmbedding(
+            List<Memory> noThreshold = await storage.SearchWithFullEmbedding(
                 query: query,
                 limit: 1000,
                 minSimilarity: new SimilarityScore(0.0),
                 filterTags: null,
                 includeArchived: false,
-                cancellationToken: default);
+                cancellationToken: TestContext.Current.CancellationToken);
 
-            var noThresholdIds = noThreshold.Select(m => m.Id).ToHashSet();
+            HashSet<MemoryId> noThresholdIds = noThreshold.Select(m => m.Id).ToHashSet();
             Assert.Contains(target.Id, noThresholdIds);
             Assert.Contains(unrelated.Id, noThresholdIds);
         }
         finally
         {
-            if (target != null) await storage.Delete(target.Id, default);
-            if (unrelated != null) await storage.Delete(unrelated.Id, default);
+            if (target != null) await storage.Delete(target.Id, TestContext.Current.CancellationToken);
+            if (unrelated != null) await storage.Delete(unrelated.Id, TestContext.Current.CancellationToken);
         }
     }
 }

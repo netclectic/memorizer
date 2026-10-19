@@ -84,7 +84,7 @@ public class MemoryEvent
 
         return new MemoryEvent
         {
-            EventId = Models.EventId.New(),
+            EventId = EventId.New(),
             MemoryId = memoryId,
             VersionNumber = versionNumber,
             EventType = eventType,

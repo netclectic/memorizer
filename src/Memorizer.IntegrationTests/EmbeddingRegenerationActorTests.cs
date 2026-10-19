@@ -2,17 +2,12 @@ using Akka.Actor;
 using Akka.Hosting;
 using Akka.Hosting.TestKit;
 using Memorizer.Actors;
-using Memorizer.Models;
-using Memorizer.Models.ValueTypes;
-using Pgvector;
-using Xunit.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
-using System.Threading.Tasks;
-using System.Linq;
 using Memorizer.Extensions;
+using Memorizer.Models.ValueTypes;
 using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Memorizer.IntegrationTests;
@@ -34,6 +29,11 @@ public class EmbeddingRegenerationActorTests : TestKit
     {
         _fixture = fixture;
         _output = output;
+    }
+
+    protected override Task BeforeTestStart()
+    {
+        return TestDatabaseReset.ForNewClassAsync(_fixture, GetType()).AsTask();
     }
 
     /// <summary>
@@ -80,14 +80,14 @@ public class EmbeddingRegenerationActorTests : TestKit
         var storage = scope.ServiceProvider.GetRequiredService<IStorage>();
 
         // 1. Get initial count
-        var initialCount = (await storage.GetMemoriesPaginated(1, int.MaxValue)).Memories.Count;
+        var initialCount = (await storage.GetMemoriesPaginated(1, int.MaxValue, cancellationToken: TestContext.Current.CancellationToken)).Memories.Count;
 
         // 2. Add test memories
         var testMemories = new[]
         {
-            await storage.StoreMemory("test", "Content A for embedding regeneration test", "test", new[] { "x" }, new Confidence(1.0), "Title A"),
-            await storage.StoreMemory("test", "Content B for embedding regeneration test", "test", new[] { "y" }, new Confidence(1.0), "Title B"),
-            await storage.StoreMemory("test", "Content C for embedding regeneration test", "test", new[] { "z" }, new Confidence(1.0), "Title C")
+            await storage.StoreMemory("test", "Content A for embedding regeneration test", "test", new[] { "x" }, new Confidence(1.0), "Title A", cancellationToken: TestContext.Current.CancellationToken),
+            await storage.StoreMemory("test", "Content B for embedding regeneration test", "test", new[] { "y" }, new Confidence(1.0), "Title B", cancellationToken: TestContext.Current.CancellationToken),
+            await storage.StoreMemory("test", "Content C for embedding regeneration test", "test", new[] { "z" }, new Confidence(1.0), "Title C", cancellationToken: TestContext.Current.CancellationToken)
         };
 
         // Use the Akka.DependencyInjection resolver to create the actor
@@ -109,7 +109,7 @@ public class EmbeddingRegenerationActorTests : TestKit
         // Verify that embeddings were regenerated (both content and metadata)
         foreach (var testMemory in testMemories)
         {
-            var regeneratedMemory = await storage.Get(testMemory.Id);
+            var regeneratedMemory = await storage.Get(testMemory.Id, TestContext.Current.CancellationToken);
             Assert.NotNull(regeneratedMemory);
             Assert.NotNull(regeneratedMemory.Embedding);
             Assert.NotNull(regeneratedMemory.EmbeddingMetadata);
@@ -118,7 +118,7 @@ public class EmbeddingRegenerationActorTests : TestKit
 
         // Clean up test data
         foreach (var memory in testMemories)
-            await storage.Delete(memory.Id);
+            await storage.Delete(memory.Id, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -135,10 +135,11 @@ public class EmbeddingRegenerationActorTests : TestKit
             "test",
             new[] { "dual-test", "embedding" },
             new Confidence(1.0),
-            "Dual Embedding Test");
+            "Dual Embedding Test",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Get original embeddings
-        var original = await storage.Get(testMemory.Id);
+        var original = await storage.Get(testMemory.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(original);
         Assert.NotNull(original.Embedding);
         Assert.NotNull(original.EmbeddingMetadata);
@@ -162,7 +163,7 @@ public class EmbeddingRegenerationActorTests : TestKit
         Assert.False(status.IsRunning);
 
         // Get regenerated memory
-        var regenerated = await storage.Get(testMemory.Id);
+        var regenerated = await storage.Get(testMemory.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(regenerated);
         Assert.NotNull(regenerated.Embedding);
         Assert.NotNull(regenerated.EmbeddingMetadata);
@@ -178,7 +179,7 @@ public class EmbeddingRegenerationActorTests : TestKit
         Assert.Equal(originalMetadataEmbedding.Length, regeneratedMetadataEmbedding.Length);
 
         // Clean up
-        await storage.Delete(testMemory.Id);
+        await storage.Delete(testMemory.Id, TestContext.Current.CancellationToken);
     }
 
     protected override void ConfigureServices(HostBuilderContext context, IServiceCollection services)
@@ -209,7 +210,7 @@ public class EmbeddingRegenerationActorTests : TestKit
             Timeout = TimeSpan.FromMinutes(1)
         });
 
-        services.AddMemorizer(initialize:false);
+        services.AddMemorizer(initialize: false);
     }
 
     protected override void ConfigureAkka(AkkaConfigurationBuilder builder, IServiceProvider provider)

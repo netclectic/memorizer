@@ -2,7 +2,6 @@ using Memorizer.Models;
 using Memorizer.Models.Enums;
 using Memorizer.Models.ValueTypes;
 using Memorizer.Services;
-using Memorizer.Settings;
 using Pgvector;
 
 namespace Memorizer.UnitTests.Tools;

@@ -1,14 +1,10 @@
 using Memorizer.Extensions;
 using Memorizer.IntegrationTests.Logging;
-using Memorizer.Models;
 using Memorizer.Models.Enums;
-using Memorizer.Models.ValueTypes;
 using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -17,15 +13,18 @@ namespace Memorizer.IntegrationTests;
 /// Tests name-based search across hierarchy levels and breadcrumb/path retrieval.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class WorkspaceProjectSearchTests : IDisposable
+public class WorkspaceProjectSearchTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public WorkspaceProjectSearchTests(IntegrationTestFixture fixture, ITestOutputHelper output)
@@ -76,12 +75,12 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create nested workspace hierarchy
-        var root = await storage.CreateWorkspaceAsync("Engineering", "Root workspace", cancellationToken: default);
-        var child = await storage.CreateWorkspaceAsync("Memorizer", "Child workspace", parentId: root.Id, cancellationToken: default);
-        var grandchild = await storage.CreateWorkspaceAsync("Billing", "Grandchild workspace", parentId: child.Id, cancellationToken: default);
+        var root = await storage.CreateWorkspaceAsync("Engineering", "Root workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var child = await storage.CreateWorkspaceAsync("Memorizer", "Child workspace", parentId: root.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var grandchild = await storage.CreateWorkspaceAsync("Billing", "Grandchild workspace", parentId: child.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act: Search for the deeply nested workspace
-        var results = await storage.SearchWorkspacesAsync("Billing", includeSystem: false, cancellationToken: default);
+        var results = await storage.SearchWorkspacesAsync("Billing", includeSystem: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(results);
@@ -92,9 +91,9 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine($"Found workspace at path: {results[0].FullPath}");
 
         // Cleanup
-        await storage.DeleteWorkspaceAsync(grandchild.Id, default);
-        await storage.DeleteWorkspaceAsync(child.Id, default);
-        await storage.DeleteWorkspaceAsync(root.Id, default);
+        await storage.DeleteWorkspaceAsync(grandchild.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(child.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(root.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -103,12 +102,12 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("TestWorkspace", cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("TestWorkspace", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act: Search with different cases
-        var lower = await storage.SearchWorkspacesAsync("testworkspace", cancellationToken: default);
-        var upper = await storage.SearchWorkspacesAsync("TESTWORKSPACE", cancellationToken: default);
-        var mixed = await storage.SearchWorkspacesAsync("TeStWoRkSpAcE", cancellationToken: default);
+        var lower = await storage.SearchWorkspacesAsync("testworkspace", cancellationToken: TestContext.Current.CancellationToken);
+        var upper = await storage.SearchWorkspacesAsync("TESTWORKSPACE", cancellationToken: TestContext.Current.CancellationToken);
+        var mixed = await storage.SearchWorkspacesAsync("TeStWoRkSpAcE", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(lower);
@@ -119,7 +118,7 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine("Case-insensitive search works correctly");
 
         // Cleanup
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -128,10 +127,10 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("MyLongWorkspaceName", cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("MyLongWorkspaceName", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act: Search with partial name
-        var results = await storage.SearchWorkspacesAsync("Long", cancellationToken: default);
+        var results = await storage.SearchWorkspacesAsync("Long", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(results);
@@ -140,7 +139,7 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine($"Partial match found: {results[0].Workspace.Name}");
 
         // Cleanup
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -149,12 +148,12 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create workspaces with common substring
-        var ws1 = await storage.CreateWorkspaceAsync("API Project One", cancellationToken: default);
-        var ws2 = await storage.CreateWorkspaceAsync("API Project Two", cancellationToken: default);
-        var ws3 = await storage.CreateWorkspaceAsync("Something Else", cancellationToken: default);
+        var ws1 = await storage.CreateWorkspaceAsync("API Project One", cancellationToken: TestContext.Current.CancellationToken);
+        var ws2 = await storage.CreateWorkspaceAsync("API Project Two", cancellationToken: TestContext.Current.CancellationToken);
+        var ws3 = await storage.CreateWorkspaceAsync("Something Else", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
-        var results = await storage.SearchWorkspacesAsync("API", cancellationToken: default);
+        var results = await storage.SearchWorkspacesAsync("API", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, results.Count);
@@ -164,9 +163,9 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine($"Found {results.Count} matching workspaces");
 
         // Cleanup
-        await storage.DeleteWorkspaceAsync(ws1.Id, default);
-        await storage.DeleteWorkspaceAsync(ws2.Id, default);
-        await storage.DeleteWorkspaceAsync(ws3.Id, default);
+        await storage.DeleteWorkspaceAsync(ws1.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(ws2.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(ws3.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -176,7 +175,7 @@ public class WorkspaceProjectSearchTests : IDisposable
 
         // The Unfiled workspace is a system workspace
         // Act: Search should not find it
-        var results = await storage.SearchWorkspacesAsync("Unfiled", includeSystem: false, cancellationToken: default);
+        var results = await storage.SearchWorkspacesAsync("Unfiled", includeSystem: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert: Should not find system workspaces
         Assert.DoesNotContain(results, r => r.Workspace.IsSystem);
@@ -190,7 +189,7 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Act: Search with includeSystem = true
-        var results = await storage.SearchWorkspacesAsync("Unfiled", includeSystem: true, cancellationToken: default);
+        var results = await storage.SearchWorkspacesAsync("Unfiled", includeSystem: true, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert: Should find the Unfiled system workspace
         Assert.Contains(results, r => r.Workspace.IsSystem && r.Workspace.Name == "Unfiled");
@@ -204,12 +203,12 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create 3-level hierarchy
-        var root = await storage.CreateWorkspaceAsync("Root", cancellationToken: default);
-        var middle = await storage.CreateWorkspaceAsync("Middle", parentId: root.Id, cancellationToken: default);
-        var leaf = await storage.CreateWorkspaceAsync("Leaf", parentId: middle.Id, cancellationToken: default);
+        var root = await storage.CreateWorkspaceAsync("Root", cancellationToken: TestContext.Current.CancellationToken);
+        var middle = await storage.CreateWorkspaceAsync("Middle", parentId: root.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var leaf = await storage.CreateWorkspaceAsync("Leaf", parentId: middle.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
-        var path = await storage.GetWorkspacePathAsync(leaf.Id, cancellationToken: default);
+        var path = await storage.GetWorkspacePathAsync(leaf.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert: Path should be [Root, Middle] (not including Leaf itself)
         Assert.Equal(2, path.Count);
@@ -221,9 +220,9 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine($"Path to Leaf: {string.Join(" > ", path.Select(p => p.Name))} > Leaf");
 
         // Cleanup
-        await storage.DeleteWorkspaceAsync(leaf.Id, default);
-        await storage.DeleteWorkspaceAsync(middle.Id, default);
-        await storage.DeleteWorkspaceAsync(root.Id, default);
+        await storage.DeleteWorkspaceAsync(leaf.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(middle.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(root.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -232,10 +231,10 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var root = await storage.CreateWorkspaceAsync("Root", cancellationToken: default);
+        var root = await storage.CreateWorkspaceAsync("Root", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
-        var path = await storage.GetWorkspacePathAsync(root.Id, cancellationToken: default);
+        var path = await storage.GetWorkspacePathAsync(root.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert: Root has no ancestors
         Assert.Empty(path);
@@ -243,7 +242,7 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine("Root workspace correctly has empty path");
 
         // Cleanup
-        await storage.DeleteWorkspaceAsync(root.Id, default);
+        await storage.DeleteWorkspaceAsync(root.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     #endregion
@@ -256,12 +255,12 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create workspace with nested projects
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var parent = await storage.CreateProjectAsync(workspace.Id, "Epic Feature", cancellationToken: default);
-        var child = await storage.CreateProjectAsync(workspace.Id, "Sub Task", parentId: parent.Id, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var parent = await storage.CreateProjectAsync(workspace.Id, "Epic Feature", cancellationToken: TestContext.Current.CancellationToken);
+        var child = await storage.CreateProjectAsync(workspace.Id, "Sub Task", parentId: parent.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
-        var results = await storage.SearchProjectsAsync("Sub Task", cancellationToken: default);
+        var results = await storage.SearchProjectsAsync("Sub Task", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(results);
@@ -272,9 +271,9 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine($"Found project at path: {results[0].FullPath}");
 
         // Cleanup
-        await storage.DeleteProjectAsync(child.Id, default);
-        await storage.DeleteProjectAsync(parent.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(child.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(parent.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -283,12 +282,12 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var project = await storage.CreateProjectAsync(workspace.Id, "MyTestProject", cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "MyTestProject", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
-        var lower = await storage.SearchProjectsAsync("mytestproject", cancellationToken: default);
-        var upper = await storage.SearchProjectsAsync("MYTESTPROJECT", cancellationToken: default);
+        var lower = await storage.SearchProjectsAsync("mytestproject", cancellationToken: TestContext.Current.CancellationToken);
+        var upper = await storage.SearchProjectsAsync("MYTESTPROJECT", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(lower);
@@ -298,8 +297,8 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine("Case-insensitive project search works correctly");
 
         // Cleanup
-        await storage.DeleteProjectAsync(project.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(project.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -308,17 +307,17 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var active = await storage.CreateProjectAsync(workspace.Id, "Active Project", cancellationToken: default);
-        var completed = await storage.CreateProjectAsync(workspace.Id, "Completed Project", cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var active = await storage.CreateProjectAsync(workspace.Id, "Active Project", cancellationToken: TestContext.Current.CancellationToken);
+        var completed = await storage.CreateProjectAsync(workspace.Id, "Completed Project", cancellationToken: TestContext.Current.CancellationToken);
 
         // Projects are created in Draft status, so we need to set them to Active/Completed
-        await storage.UpdateProjectAsync(active.Id, status: ProjectStatusEnum.Active, cancellationToken: default);
-        await storage.UpdateProjectAsync(completed.Id, status: ProjectStatusEnum.Completed, cancellationToken: default);
+        await storage.UpdateProjectAsync(active.Id, status: ProjectStatusEnum.Active, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.UpdateProjectAsync(completed.Id, status: ProjectStatusEnum.Completed, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act: Search with status filter
-        var activeResults = await storage.SearchProjectsAsync("Project", statusFilter: ProjectStatusEnum.Active, cancellationToken: default);
-        var completedResults = await storage.SearchProjectsAsync("Project", statusFilter: ProjectStatusEnum.Completed, cancellationToken: default);
+        var activeResults = await storage.SearchProjectsAsync("Project", statusFilter: ProjectStatusEnum.Active, cancellationToken: TestContext.Current.CancellationToken);
+        var completedResults = await storage.SearchProjectsAsync("Project", statusFilter: ProjectStatusEnum.Completed, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(activeResults);
@@ -329,9 +328,9 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine($"Status filter works: {activeResults.Count} active, {completedResults.Count} completed");
 
         // Cleanup
-        await storage.DeleteProjectAsync(active.Id, default);
-        await storage.DeleteProjectAsync(completed.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(active.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(completed.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -340,13 +339,13 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: default);
-        var active = await storage.CreateProjectAsync(workspace.Id, "Search Active", cancellationToken: default);
-        var completed = await storage.CreateProjectAsync(workspace.Id, "Search Completed", cancellationToken: default);
-        await storage.UpdateProjectAsync(completed.Id, status: ProjectStatusEnum.Completed, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", cancellationToken: TestContext.Current.CancellationToken);
+        var active = await storage.CreateProjectAsync(workspace.Id, "Search Active", cancellationToken: TestContext.Current.CancellationToken);
+        var completed = await storage.CreateProjectAsync(workspace.Id, "Search Completed", cancellationToken: TestContext.Current.CancellationToken);
+        await storage.UpdateProjectAsync(completed.Id, status: ProjectStatusEnum.Completed, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act: Search without status filter
-        var results = await storage.SearchProjectsAsync("Search", statusFilter: null, cancellationToken: default);
+        var results = await storage.SearchProjectsAsync("Search", statusFilter: null, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, results.Count);
@@ -354,9 +353,9 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine($"Found {results.Count} projects when no status filter applied");
 
         // Cleanup
-        await storage.DeleteProjectAsync(active.Id, default);
-        await storage.DeleteProjectAsync(completed.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(active.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(completed.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -365,13 +364,13 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create nested workspace with nested project
-        var rootWs = await storage.CreateWorkspaceAsync("Engineering", cancellationToken: default);
-        var childWs = await storage.CreateWorkspaceAsync("Memorizer", parentId: rootWs.Id, cancellationToken: default);
-        var parentProj = await storage.CreateProjectAsync(childWs.Id, "V2 Release", cancellationToken: default);
-        var childProj = await storage.CreateProjectAsync(childWs.Id, "Search Feature", parentId: parentProj.Id, cancellationToken: default);
+        var rootWs = await storage.CreateWorkspaceAsync("Engineering", cancellationToken: TestContext.Current.CancellationToken);
+        var childWs = await storage.CreateWorkspaceAsync("Memorizer", parentId: rootWs.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var parentProj = await storage.CreateProjectAsync(childWs.Id, "V2 Release", cancellationToken: TestContext.Current.CancellationToken);
+        var childProj = await storage.CreateProjectAsync(childWs.Id, "Search Feature", parentId: parentProj.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
-        var path = await storage.GetProjectPathAsync(childProj.Id, cancellationToken: default);
+        var path = await storage.GetProjectPathAsync(childProj.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, path.WorkspacePath.Count); // Engineering, Memorizer
@@ -386,10 +385,10 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine($"Full path: {fullPath}");
 
         // Cleanup
-        await storage.DeleteProjectAsync(childProj.Id, default);
-        await storage.DeleteProjectAsync(parentProj.Id, default);
-        await storage.DeleteWorkspaceAsync(childWs.Id, default);
-        await storage.DeleteWorkspaceAsync(rootWs.Id, default);
+        await storage.DeleteProjectAsync(childProj.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(parentProj.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(childWs.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(rootWs.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -398,11 +397,11 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange
-        var workspace = await storage.CreateWorkspaceAsync("Test", cancellationToken: default);
-        var project = await storage.CreateProjectAsync(workspace.Id, "Root Project", cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test", cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "Root Project", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
-        var path = await storage.GetProjectPathAsync(project.Id, cancellationToken: default);
+        var path = await storage.GetProjectPathAsync(project.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(path.WorkspacePath); // Just "Test"
@@ -411,8 +410,8 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine("Root project correctly has empty project ancestor path");
 
         // Cleanup
-        await storage.DeleteProjectAsync(project.Id, default);
-        await storage.DeleteWorkspaceAsync(workspace.Id, default);
+        await storage.DeleteProjectAsync(project.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -421,13 +420,13 @@ public class WorkspaceProjectSearchTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Arrange: Create projects with same name in different workspaces
-        var ws1 = await storage.CreateWorkspaceAsync("Workspace A", cancellationToken: default);
-        var ws2 = await storage.CreateWorkspaceAsync("Workspace B", cancellationToken: default);
-        var proj1 = await storage.CreateProjectAsync(ws1.Id, "Common Project", cancellationToken: default);
-        var proj2 = await storage.CreateProjectAsync(ws2.Id, "Common Project", cancellationToken: default);
+        var ws1 = await storage.CreateWorkspaceAsync("Workspace A", cancellationToken: TestContext.Current.CancellationToken);
+        var ws2 = await storage.CreateWorkspaceAsync("Workspace B", cancellationToken: TestContext.Current.CancellationToken);
+        var proj1 = await storage.CreateProjectAsync(ws1.Id, "Common Project", cancellationToken: TestContext.Current.CancellationToken);
+        var proj2 = await storage.CreateProjectAsync(ws2.Id, "Common Project", cancellationToken: TestContext.Current.CancellationToken);
 
         // Act
-        var results = await storage.SearchProjectsAsync("Common", cancellationToken: default);
+        var results = await storage.SearchProjectsAsync("Common", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, results.Count);
@@ -437,10 +436,10 @@ public class WorkspaceProjectSearchTests : IDisposable
         _output.WriteLine($"Found projects in different workspaces: {string.Join(", ", results.Select(r => r.FullPath))}");
 
         // Cleanup
-        await storage.DeleteProjectAsync(proj1.Id, default);
-        await storage.DeleteProjectAsync(proj2.Id, default);
-        await storage.DeleteWorkspaceAsync(ws1.Id, default);
-        await storage.DeleteWorkspaceAsync(ws2.Id, default);
+        await storage.DeleteProjectAsync(proj1.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteProjectAsync(proj2.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(ws1.Id, cancellationToken: TestContext.Current.CancellationToken);
+        await storage.DeleteWorkspaceAsync(ws2.Id, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     #endregion

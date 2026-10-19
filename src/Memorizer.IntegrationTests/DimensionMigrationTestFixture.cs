@@ -34,8 +34,7 @@ public class DimensionMigrationTestFixture : IAsyncLifetime
     public DimensionMigrationTestFixture()
     {
         // Create dedicated PostgreSQL container for dimension migration tests
-        PostgresContainer = new PostgreSqlBuilder()
-            .WithImage("pgvector/pgvector:pg17")
+        PostgresContainer = new PostgreSqlBuilder("pgvector/pgvector:pg17")
             .WithCleanUp(true)
             .WithPortBinding(5432, true) // Random host port
             .WithUsername("postgres")
@@ -44,7 +43,7 @@ public class DimensionMigrationTestFixture : IAsyncLifetime
             .Build();
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await PostgresContainer.StartAsync();
 
@@ -143,7 +142,7 @@ public class DimensionMigrationTestFixture : IAsyncLifetime
         }
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await PostgresContainer.DisposeAsync();
     }

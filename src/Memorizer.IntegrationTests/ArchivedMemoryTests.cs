@@ -6,7 +6,6 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -16,7 +15,7 @@ namespace Memorizer.IntegrationTests;
 /// and that GetArchivedMemoriesAsync works with project filtering.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class ArchivedMemoryTests : IDisposable
+public class ArchivedMemoryTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -77,14 +76,15 @@ public class ArchivedMemoryTests : IDisposable
             // Create a workspace and project
             var workspace = await storage.CreateWorkspaceAsync(
                 $"ArchivedTest-Workspace-{Guid.NewGuid():N}",
-                "Test workspace for archived memory tests"
-            );
+                "Test workspace for archived memory tests",
+                cancellationToken: TestContext.Current.CancellationToken);
             workspaceId = workspace.Id;
 
             var project = await storage.CreateProjectAsync(
                 workspace.Id,
                 $"ArchivedTest-Project-{Guid.NewGuid():N}",
-                "Test project for archived memory tests"
+                "Test project for archived memory tests",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             projectId = project.Id;
 
@@ -98,7 +98,8 @@ public class ArchivedMemoryTests : IDisposable
                 tags: new[] { "archived-test" },
                 confidence: new Confidence(1.0),
                 title: "Active Memory 1",
-                owner: projectOwner
+                owner: projectOwner,
+                cancellationToken: TestContext.Current.CancellationToken
             );
             createdMemories.Add(activeMemory1.Id);
 
@@ -109,7 +110,8 @@ public class ArchivedMemoryTests : IDisposable
                 tags: new[] { "archived-test" },
                 confidence: new Confidence(1.0),
                 title: "Active Memory 2",
-                owner: projectOwner
+                owner: projectOwner,
+                cancellationToken: TestContext.Current.CancellationToken
             );
             createdMemories.Add(activeMemory2.Id);
 
@@ -120,18 +122,21 @@ public class ArchivedMemoryTests : IDisposable
                 tags: new[] { "archived-test" },
                 confidence: new Confidence(1.0),
                 title: "Archived Memory",
-                owner: projectOwner
+                owner: projectOwner,
+                cancellationToken: TestContext.Current.CancellationToken
             );
             createdMemories.Add(memoryToArchive.Id);
 
             // Archive one of the memories
-            await storage.UpdateMemoryArchetypeAsync(memoryToArchive.Id, ArchetypeEnum.Archived);
+            await storage.UpdateMemoryArchetypeAsync(memoryToArchive.Id, ArchetypeEnum.Archived,
+                cancellationToken: TestContext.Current.CancellationToken);
 
             // Act - Get archived memories filtered by project
             var (archivedMemories, totalCount) = await storage.GetArchivedMemoriesAsync(
                 page: 1,
                 pageSize: 50,
-                projectId: projectId
+                projectId: projectId,
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             // Assert
@@ -147,15 +152,17 @@ public class ArchivedMemoryTests : IDisposable
             // Clean up
             foreach (var memoryId in createdMemories)
             {
-                await storage.Delete(memoryId, CancellationToken.None);
+                await storage.Delete(memoryId, TestContext.Current.CancellationToken);
             }
             if (projectId.HasValue)
             {
-                await storage.DeleteProjectAsync(projectId.Value);
+                await storage.DeleteProjectAsync(projectId.Value,
+                cancellationToken: TestContext.Current.CancellationToken);
             }
             if (workspaceId.HasValue)
             {
-                await storage.DeleteWorkspaceAsync(workspaceId.Value);
+                await storage.DeleteWorkspaceAsync(workspaceId.Value,
+                cancellationToken: TestContext.Current.CancellationToken);
             }
         }
     }
@@ -174,14 +181,16 @@ public class ArchivedMemoryTests : IDisposable
             // Create a workspace and project
             var workspace = await storage.CreateWorkspaceAsync(
                 $"CountTest-Workspace-{Guid.NewGuid():N}",
-                "Test workspace for memory count tests"
+                "Test workspace for memory count tests",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             workspaceId = workspace.Id;
 
             var project = await storage.CreateProjectAsync(
                 workspace.Id,
                 $"CountTest-Project-{Guid.NewGuid():N}",
-                "Test project for memory count tests"
+                "Test project for memory count tests",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             projectId = project.Id;
 
@@ -197,7 +206,8 @@ public class ArchivedMemoryTests : IDisposable
                     tags: new[] { "count-test" },
                     confidence: new Confidence(1.0),
                     title: $"Active Memory {i + 1}",
-                    owner: projectOwner
+                    owner: projectOwner,
+                cancellationToken: TestContext.Current.CancellationToken
                 );
                 createdMemories.Add(memory.Id);
             }
@@ -213,7 +223,8 @@ public class ArchivedMemoryTests : IDisposable
                     tags: new[] { "count-test" },
                     confidence: new Confidence(1.0),
                     title: $"To Archive {i + 1}",
-                    owner: projectOwner
+                    owner: projectOwner,
+                cancellationToken: TestContext.Current.CancellationToken
                 );
                 createdMemories.Add(memory.Id);
                 memoriesToArchive.Add(memory.Id);
@@ -222,11 +233,13 @@ public class ArchivedMemoryTests : IDisposable
             // Archive the 2 memories
             foreach (var memoryId in memoriesToArchive)
             {
-                await storage.UpdateMemoryArchetypeAsync(memoryId, ArchetypeEnum.Archived);
+                await storage.UpdateMemoryArchetypeAsync(memoryId, ArchetypeEnum.Archived,
+                cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Act - Get memory count for the project
-            var count = await storage.GetMemoryCountByOwnerAsync(projectOwner);
+            var count = await storage.GetMemoryCountByOwnerAsync(projectOwner,
+                cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert - Should only count the 3 active memories, not the 2 archived ones
             Assert.Equal(3, count);
@@ -238,15 +251,17 @@ public class ArchivedMemoryTests : IDisposable
             // Clean up
             foreach (var memoryId in createdMemories)
             {
-                await storage.Delete(memoryId, CancellationToken.None);
+                await storage.Delete(memoryId, TestContext.Current.CancellationToken);
             }
             if (projectId.HasValue)
             {
-                await storage.DeleteProjectAsync(projectId.Value);
+                await storage.DeleteProjectAsync(projectId.Value,
+                cancellationToken: TestContext.Current.CancellationToken);
             }
             if (workspaceId.HasValue)
             {
-                await storage.DeleteWorkspaceAsync(workspaceId.Value);
+                await storage.DeleteWorkspaceAsync(workspaceId.Value,
+                cancellationToken: TestContext.Current.CancellationToken);
             }
         }
     }
@@ -265,14 +280,16 @@ public class ArchivedMemoryTests : IDisposable
             // Create a workspace and project
             var workspace = await storage.CreateWorkspaceAsync(
                 $"ListTest-Workspace-{Guid.NewGuid():N}",
-                "Test workspace for memory list tests"
+                "Test workspace for memory list tests",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             workspaceId = workspace.Id;
 
             var project = await storage.CreateProjectAsync(
                 workspace.Id,
                 $"ListTest-Project-{Guid.NewGuid():N}",
-                "Test project for memory list tests"
+                "Test project for memory list tests",
+                cancellationToken: TestContext.Current.CancellationToken
             );
             projectId = project.Id;
 
@@ -289,7 +306,8 @@ public class ArchivedMemoryTests : IDisposable
                     tags: new[] { "list-test" },
                     confidence: new Confidence(1.0),
                     title: $"Active Memory {i + 1}",
-                    owner: projectOwner
+                    owner: projectOwner,
+                cancellationToken: TestContext.Current.CancellationToken
                 );
                 createdMemories.Add(memory.Id);
                 activeMemoryIds.Add(memory.Id);
@@ -306,7 +324,8 @@ public class ArchivedMemoryTests : IDisposable
                     tags: new[] { "list-test" },
                     confidence: new Confidence(1.0),
                     title: $"To Archive {i + 1}",
-                    owner: projectOwner
+                    owner: projectOwner,
+                cancellationToken: TestContext.Current.CancellationToken
                 );
                 createdMemories.Add(memory.Id);
                 archivedMemoryIds.Add(memory.Id);
@@ -315,11 +334,13 @@ public class ArchivedMemoryTests : IDisposable
             // Archive the 2 memories
             foreach (var memoryId in archivedMemoryIds)
             {
-                await storage.UpdateMemoryArchetypeAsync(memoryId, ArchetypeEnum.Archived);
+                await storage.UpdateMemoryArchetypeAsync(memoryId, ArchetypeEnum.Archived,
+                cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Act - Get memories for the project owner
-            var memories = await storage.GetMemoriesByOwnerAsync(projectOwner, page: 1, pageSize: 50);
+            var memories = await storage.GetMemoriesByOwnerAsync(projectOwner, page: 1, pageSize: 50,
+                cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert - Should only return the 3 active memories, not the 2 archived ones
             Assert.Equal(3, memories.Count);
@@ -342,15 +363,17 @@ public class ArchivedMemoryTests : IDisposable
             // Clean up
             foreach (var memoryId in createdMemories)
             {
-                await storage.Delete(memoryId, CancellationToken.None);
+                await storage.Delete(memoryId, TestContext.Current.CancellationToken);
             }
             if (projectId.HasValue)
             {
-                await storage.DeleteProjectAsync(projectId.Value);
+                await storage.DeleteProjectAsync(projectId.Value,
+                cancellationToken: TestContext.Current.CancellationToken);
             }
             if (workspaceId.HasValue)
             {
-                await storage.DeleteWorkspaceAsync(workspaceId.Value);
+                await storage.DeleteWorkspaceAsync(workspaceId.Value,
+                cancellationToken: TestContext.Current.CancellationToken);
             }
         }
     }
@@ -374,7 +397,8 @@ public class ArchivedMemoryTests : IDisposable
                     source: "test",
                     tags: new[] { "archived-all-test" },
                     confidence: new Confidence(1.0),
-                    title: $"Unfiled Archived {i + 1}"
+                    title: $"Unfiled Archived {i + 1}",
+                cancellationToken: TestContext.Current.CancellationToken
                 );
                 createdMemories.Add(memory.Id);
                 archivedMemoryIds.Add(memory.Id);
@@ -383,14 +407,16 @@ public class ArchivedMemoryTests : IDisposable
             // Archive all of them
             foreach (var memoryId in archivedMemoryIds)
             {
-                await storage.UpdateMemoryArchetypeAsync(memoryId, ArchetypeEnum.Archived);
+                await storage.UpdateMemoryArchetypeAsync(memoryId, ArchetypeEnum.Archived,
+                cancellationToken: TestContext.Current.CancellationToken);
             }
 
             // Act - Get all archived memories without filter
             var (archivedMemories, totalCount) = await storage.GetArchivedMemoriesAsync(
                 page: 1,
                 pageSize: 50,
-                projectId: null
+                projectId: null,
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             // Assert - Should return at least our 3 archived memories
@@ -410,13 +436,16 @@ public class ArchivedMemoryTests : IDisposable
             // Clean up
             foreach (var memoryId in createdMemories)
             {
-                await storage.Delete(memoryId, CancellationToken.None);
+                await storage.Delete(memoryId, TestContext.Current.CancellationToken);
             }
         }
     }
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_serviceProvider as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

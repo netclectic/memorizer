@@ -1,6 +1,5 @@
 using Memorizer.Models;
 using Memorizer.Models.Enums;
-using Memorizer.Models.ValueTypes;
 using Microsoft.Extensions.Logging.Abstractions;
 using PostgMem.Tools;
 
@@ -31,7 +30,7 @@ public class WorkspaceToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.GetWorkspace(workspaceId.Value.ToString());
+        var result = await tools.GetWorkspace(workspaceId.Value.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -55,7 +54,7 @@ public class WorkspaceToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.GetWorkspace(workspaceId.Value.ToString());
+        var result = await tools.GetWorkspace(workspaceId.Value.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(TestCanonicalUrl, result);
@@ -79,7 +78,7 @@ public class WorkspaceToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.CreateWorkspace("New Workspace");
+        var result = await tools.CreateWorkspace("New Workspace", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -103,7 +102,7 @@ public class WorkspaceToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.CreateWorkspace("New Workspace");
+        var result = await tools.CreateWorkspace("New Workspace", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(TestCanonicalUrl, result);
@@ -128,7 +127,7 @@ public class WorkspaceToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.GetProjectContext(projectId.Value.ToString());
+        var result = await tools.GetProjectContext(projectId.Value.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -155,7 +154,7 @@ public class WorkspaceToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.CreateProject(workspaceId.Value, "New Project");
+        var result = await tools.CreateProject(workspaceId.Value, "New Project", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);

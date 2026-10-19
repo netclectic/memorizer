@@ -1,5 +1,3 @@
-using Akka.Actor;
-using Akka.Event;
 using Akka.Hosting;
 using Akka.Hosting.TestKit;
 using Akka.Streams;
@@ -7,7 +5,6 @@ using Memorizer.Actors;
 using Memorizer.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -94,7 +91,7 @@ public class ProgressJobManagerTests : TestKit
 
         // Assert - collect all events
         var events = new List<ProgressEvent>();
-        await foreach (var evt in reader.ReadAllAsync())
+        await foreach (var evt in reader.ReadAllAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             events.Add(evt);
             _output.WriteLine($"Received event: Status={evt.Status}, TotalItems={evt.TotalItems}, Processed={evt.TotalProcessed}");
@@ -174,7 +171,7 @@ public class ProgressJobManagerTests : TestKit
 
         // Assert - collect all events
         var events = new List<ProgressEvent>();
-        await foreach (var evt in reader.ReadAllAsync())
+        await foreach (var evt in reader.ReadAllAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             events.Add(evt);
             _output.WriteLine($"Received: Processed={evt.TotalProcessed}/{evt.TotalItems}, Status={evt.Status}");
@@ -295,12 +292,12 @@ public class ProgressJobManagerTests : TestKit
         var events1 = new List<ProgressEvent>();
         var events2 = new List<ProgressEvent>();
 
-        await foreach (var evt in reader1.ReadAllAsync())
+        await foreach (var evt in reader1.ReadAllAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             events1.Add(evt);
         }
 
-        await foreach (var evt in reader2.ReadAllAsync())
+        await foreach (var evt in reader2.ReadAllAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             events2.Add(evt);
         }
@@ -327,7 +324,7 @@ public class ProgressJobManagerTests : TestKit
 
         // Assert - stream should complete with Failed status
         var events = new List<ProgressEvent>();
-        await foreach (var evt in reader.ReadAllAsync())
+        await foreach (var evt in reader.ReadAllAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             events.Add(evt);
         }
@@ -352,7 +349,7 @@ public class ProgressJobManagerTests : TestKit
 
         // Assert - should receive one Idle event and then complete
         var events = new List<ProgressEvent>();
-        await foreach (var evt in reader.ReadAllAsync())
+        await foreach (var evt in reader.ReadAllAsync(cancellationToken: TestContext.Current.CancellationToken))
         {
             events.Add(evt);
             _output.WriteLine($"Received idle event: Status={evt.Status}");
@@ -374,7 +371,7 @@ public class ProgressJobManagerTests : TestKit
         var reader = manager.CreateIdleSubscription("idle-sub");
 
         // Consume the stream
-        await foreach (var _ in reader.ReadAllAsync()) { }
+        await foreach (var _ in reader.ReadAllAsync(cancellationToken: TestContext.Current.CancellationToken)) { }
 
         // Assert
         Assert.Equal(0, manager.SubscriberCount);

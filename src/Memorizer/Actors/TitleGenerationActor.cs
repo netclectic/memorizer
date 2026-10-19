@@ -1,10 +1,8 @@
 using Akka.Actor;
 using Akka.Event;
 using Akka.Streams;
-using Memorizer.Models;
 using Memorizer.Services;
 using Memorizer.Services.Providers;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Memorizer.Actors;
 

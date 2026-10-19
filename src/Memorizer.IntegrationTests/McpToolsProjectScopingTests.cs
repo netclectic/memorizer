@@ -7,8 +7,6 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
 
 namespace Memorizer.IntegrationTests;
 
@@ -17,15 +15,18 @@ namespace Memorizer.IntegrationTests;
 /// Tests the new projectId, owner, and archetype parameters in Store and Search.
 /// </summary>
 [Collection(nameof(IntegrationTestCollection))]
-public class McpToolsProjectScopingTests : IDisposable
+public class McpToolsProjectScopingTests : IAsyncLifetime
 {
     private readonly IntegrationTestFixture _fixture;
     private readonly ITestOutputHelper _output;
     private readonly IServiceProvider _services;
 
-    public void Dispose()
+    public ValueTask InitializeAsync() => TestDatabaseReset.ForNewClassAsync(_fixture, GetType());
+
+    public ValueTask DisposeAsync()
     {
         (_services as IDisposable)?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     public McpToolsProjectScopingTests(IntegrationTestFixture fixture, ITestOutputHelper output)
@@ -76,8 +77,8 @@ public class McpToolsProjectScopingTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Create a workspace and project first
-        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", "For testing", cancellationToken: default);
-        var project = await storage.CreateProjectAsync(workspace.Id, "Test Project", "For testing", cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Test Workspace", "For testing", cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "Test Project", "For testing", cancellationToken: TestContext.Current.CancellationToken);
 
         try
         {
@@ -92,7 +93,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 title: "Project Scoped Memory",
                 owner: owner,
                 archetype: ArchetypeEnum.Document,
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             Assert.NotNull(memory);
@@ -103,17 +104,17 @@ public class McpToolsProjectScopingTests : IDisposable
             _output.WriteLine($"Stored memory {memory.Id} with project owner {project.Id}");
 
             // Verify by retrieving
-            var retrieved = await storage.Get(memory.Id, default);
+            var retrieved = await storage.Get(memory.Id, TestContext.Current.CancellationToken);
             Assert.NotNull(retrieved);
             Assert.Equal(project.Id, retrieved.Owner.ProjectId);
 
             // Cleanup memory
-            await storage.Delete(memory.Id, default);
+            await storage.Delete(memory.Id, TestContext.Current.CancellationToken);
         }
         finally
         {
-            await storage.DeleteProjectAsync(project.Id, default);
-            await storage.DeleteWorkspaceAsync(workspace.Id, default);
+            await storage.DeleteProjectAsync(project.Id, cancellationToken: TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -132,7 +133,7 @@ public class McpToolsProjectScopingTests : IDisposable
             title: "Default Owner Memory",
             owner: null, // Explicitly null
             archetype: ArchetypeEnum.Document,
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         try
@@ -146,7 +147,7 @@ public class McpToolsProjectScopingTests : IDisposable
         }
         finally
         {
-            await storage.Delete(memory.Id, default);
+            await storage.Delete(memory.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -165,7 +166,7 @@ public class McpToolsProjectScopingTests : IDisposable
             title: "Work Log Entry",
             owner: null,
             archetype: ArchetypeEnum.Record, // Record = immutable
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         );
 
         try
@@ -178,7 +179,7 @@ public class McpToolsProjectScopingTests : IDisposable
         }
         finally
         {
-            await storage.Delete(memory.Id, default);
+            await storage.Delete(memory.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -192,9 +193,9 @@ public class McpToolsProjectScopingTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Create workspace and two projects
-        var workspace = await storage.CreateWorkspaceAsync("Search Test Workspace", null, cancellationToken: default);
-        var project1 = await storage.CreateProjectAsync(workspace.Id, "Project Alpha", null, cancellationToken: default);
-        var project2 = await storage.CreateProjectAsync(workspace.Id, "Project Beta", null, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Search Test Workspace", null, cancellationToken: TestContext.Current.CancellationToken);
+        var project1 = await storage.CreateProjectAsync(workspace.Id, "Project Alpha", null, cancellationToken: TestContext.Current.CancellationToken);
+        var project2 = await storage.CreateProjectAsync(workspace.Id, "Project Beta", null, cancellationToken: TestContext.Current.CancellationToken);
 
         Memory? memoryInProject1 = null;
         Memory? memoryInProject2 = null;
@@ -211,7 +212,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: "Alpha Widget Docs",
                 owner: MemoryOwner.ForProject(project1.Id),
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             memoryInProject2 = await storage.StoreMemory(
@@ -222,7 +223,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: "Beta Widget Docs",
                 owner: MemoryOwner.ForProject(project2.Id),
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             memoryUnfiled = await storage.StoreMemory(
@@ -233,7 +234,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: "Unfiled Widget Docs",
                 owner: null, // Unfiled
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             _output.WriteLine($"Created 3 test memories across 2 projects and Unfiled");
@@ -246,7 +247,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 filterTags: null,
                 projectId: project1.Id,
                 includeUnassigned: false,
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             _output.WriteLine($"Project 1 search returned {project1Results.Count} results");
@@ -262,7 +263,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 filterTags: null,
                 projectId: project1.Id,
                 includeUnassigned: true,
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             _output.WriteLine($"Project 1 + Unfiled search returned {project1WithUnfiled.Count} results");
@@ -278,13 +279,13 @@ public class McpToolsProjectScopingTests : IDisposable
         finally
         {
             // Cleanup
-            if (memoryInProject1 != null) await storage.Delete(memoryInProject1.Id, default);
-            if (memoryInProject2 != null) await storage.Delete(memoryInProject2.Id, default);
-            if (memoryUnfiled != null) await storage.Delete(memoryUnfiled.Id, default);
+            if (memoryInProject1 != null) await storage.Delete(memoryInProject1.Id, TestContext.Current.CancellationToken);
+            if (memoryInProject2 != null) await storage.Delete(memoryInProject2.Id, TestContext.Current.CancellationToken);
+            if (memoryUnfiled != null) await storage.Delete(memoryUnfiled.Id, TestContext.Current.CancellationToken);
 
-            await storage.DeleteProjectAsync(project1.Id, default);
-            await storage.DeleteProjectAsync(project2.Id, default);
-            await storage.DeleteWorkspaceAsync(workspace.Id, default);
+            await storage.DeleteProjectAsync(project1.Id, cancellationToken: TestContext.Current.CancellationToken);
+            await storage.DeleteProjectAsync(project2.Id, cancellationToken: TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -300,8 +301,8 @@ public class McpToolsProjectScopingTests : IDisposable
         var nonce = Guid.NewGuid().ToString("N");
 
         // Create a workspace and project
-        var workspace = await storage.CreateWorkspaceAsync("Global Search Test", null, cancellationToken: default);
-        var project = await storage.CreateProjectAsync(workspace.Id, "Test Project", null, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Global Search Test", null, cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "Test Project", null, cancellationToken: TestContext.Current.CancellationToken);
 
         Memory? memoryInProject = null;
         Memory? memoryUnfiled = null;
@@ -317,7 +318,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: $"{nonce} scope-probe project",
                 owner: MemoryOwner.ForProject(project.Id),
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             memoryUnfiled = await storage.StoreMemory(
@@ -328,7 +329,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: $"{nonce} scope-probe unfiled",
                 owner: null,
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             // Search without projectId (should search all). The nonce in each target title makes
@@ -342,7 +343,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 filterTags: null,
                 projectId: null, // No project filter
                 includeUnassigned: false, // Ignored when projectId is null
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             _output.WriteLine($"Global search returned {globalResults.Count} results");
@@ -354,11 +355,11 @@ public class McpToolsProjectScopingTests : IDisposable
         }
         finally
         {
-            if (memoryInProject != null) await storage.Delete(memoryInProject.Id, default);
-            if (memoryUnfiled != null) await storage.Delete(memoryUnfiled.Id, default);
+            if (memoryInProject != null) await storage.Delete(memoryInProject.Id, TestContext.Current.CancellationToken);
+            if (memoryUnfiled != null) await storage.Delete(memoryUnfiled.Id, TestContext.Current.CancellationToken);
 
-            await storage.DeleteProjectAsync(project.Id, default);
-            await storage.DeleteWorkspaceAsync(workspace.Id, default);
+            await storage.DeleteProjectAsync(project.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -372,8 +373,8 @@ public class McpToolsProjectScopingTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Create workspace and project
-        var workspace = await storage.CreateWorkspaceAsync("Move Test Workspace", null, cancellationToken: default);
-        var project = await storage.CreateProjectAsync(workspace.Id, "Target Project", null, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Move Test Workspace", null, cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "Target Project", null, cancellationToken: TestContext.Current.CancellationToken);
 
         try
         {
@@ -386,16 +387,16 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: "Moveable Memory",
                 owner: null, // Start in Unfiled
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             Assert.True(memory.Owner.IsUnfiled, "Memory should start in Unfiled");
 
             // Move to project
-            await storage.SetMemoryOwnerAsync(memory.Id, MemoryOwner.ForProject(project.Id), default);
+            await storage.SetMemoryOwnerAsync(memory.Id, MemoryOwner.ForProject(project.Id), TestContext.Current.CancellationToken);
 
             // Verify move
-            var movedMemory = await storage.Get(memory.Id, default);
+            var movedMemory = await storage.Get(memory.Id, TestContext.Current.CancellationToken);
             Assert.NotNull(movedMemory);
             Assert.Equal(project.Id, movedMemory.Owner.ProjectId);
             Assert.Equal(OwnerTypeEnum.Project, movedMemory.Owner.Type);
@@ -403,12 +404,12 @@ public class McpToolsProjectScopingTests : IDisposable
             _output.WriteLine($"Successfully moved memory {memory.Id} to project {project.Id}");
 
             // Cleanup
-            await storage.Delete(memory.Id, default);
+            await storage.Delete(memory.Id, TestContext.Current.CancellationToken);
         }
         finally
         {
-            await storage.DeleteProjectAsync(project.Id, default);
-            await storage.DeleteWorkspaceAsync(workspace.Id, default);
+            await storage.DeleteProjectAsync(project.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -418,8 +419,8 @@ public class McpToolsProjectScopingTests : IDisposable
         var storage = _services.GetRequiredService<IStorage>();
 
         // Create workspace and project
-        var workspace = await storage.CreateWorkspaceAsync("Unfiled Move Test", null, cancellationToken: default);
-        var project = await storage.CreateProjectAsync(workspace.Id, "Source Project", null, cancellationToken: default);
+        var workspace = await storage.CreateWorkspaceAsync("Unfiled Move Test", null, cancellationToken: TestContext.Current.CancellationToken);
+        var project = await storage.CreateProjectAsync(workspace.Id, "Source Project", null, cancellationToken: TestContext.Current.CancellationToken);
 
         try
         {
@@ -432,28 +433,28 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: "Project Memory",
                 owner: MemoryOwner.ForProject(project.Id),
-                cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
             );
 
             Assert.Equal(project.Id, memory.Owner.ProjectId);
 
             // Move to Unfiled
-            await storage.MoveMemoryToUnfiledAsync(memory.Id, default);
+            await storage.MoveMemoryToUnfiledAsync(memory.Id, TestContext.Current.CancellationToken);
 
             // Verify
-            var unfiledMemory = await storage.Get(memory.Id, default);
+            var unfiledMemory = await storage.Get(memory.Id, TestContext.Current.CancellationToken);
             Assert.NotNull(unfiledMemory);
             Assert.True(unfiledMemory.Owner.IsUnfiled, "Memory should be in Unfiled after move");
 
             _output.WriteLine($"Successfully moved memory {memory.Id} back to Unfiled");
 
             // Cleanup
-            await storage.Delete(memory.Id, default);
+            await storage.Delete(memory.Id, TestContext.Current.CancellationToken);
         }
         finally
         {
-            await storage.DeleteProjectAsync(project.Id, default);
-            await storage.DeleteWorkspaceAsync(workspace.Id, default);
+            await storage.DeleteProjectAsync(project.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspace.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -471,12 +472,12 @@ public class McpToolsProjectScopingTests : IDisposable
         // then return exactly A's memories and exclude B's by the owner filter alone - which is
         // what this test verifies. Removes the title/query mismatch that made it flaky.
         var nonce = Guid.NewGuid().ToString("N");
-
-        var workspaceA = await storage.CreateWorkspaceAsync("Workspace A", null, cancellationToken: default);
-        var workspaceB = await storage.CreateWorkspaceAsync("Workspace B", null, cancellationToken: default);
-        var projectA1 = await storage.CreateProjectAsync(workspaceA.Id, "Project A1", null, cancellationToken: default);
-        var projectA2 = await storage.CreateProjectAsync(workspaceA.Id, "Project A2", null, cancellationToken: default);
-        var projectB1 = await storage.CreateProjectAsync(workspaceB.Id, "Project B1", null, cancellationToken: default);
+        
+        var workspaceA = await storage.CreateWorkspaceAsync("Workspace A", null, cancellationToken: TestContext.Current.CancellationToken);
+        var workspaceB = await storage.CreateWorkspaceAsync("Workspace B", null, cancellationToken: TestContext.Current.CancellationToken);
+        var projectA1 = await storage.CreateProjectAsync(workspaceA.Id, "Project A1", null, cancellationToken: TestContext.Current.CancellationToken);
+        var projectA2 = await storage.CreateProjectAsync(workspaceA.Id, "Project A2", null, cancellationToken: TestContext.Current.CancellationToken);
+        var projectB1 = await storage.CreateProjectAsync(workspaceB.Id, "Project B1", null, cancellationToken: TestContext.Current.CancellationToken);
 
         Memory? memoryOnWorkspaceA = null;
         Memory? memoryInProjectA1 = null;
@@ -494,7 +495,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: $"{nonce} rollup-probe workspace-a",
                 owner: MemoryOwner.ForWorkspace(workspaceA.Id),
-                cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
             );
 
             memoryInProjectA1 = await storage.StoreMemory(
@@ -505,7 +506,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: $"{nonce} rollup-probe project-a1",
                 owner: MemoryOwner.ForProject(projectA1.Id),
-                cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
             );
 
             memoryInProjectA2 = await storage.StoreMemory(
@@ -516,7 +517,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: $"{nonce} rollup-probe project-a2",
                 owner: MemoryOwner.ForProject(projectA2.Id),
-                cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
             );
 
             memoryOnWorkspaceB = await storage.StoreMemory(
@@ -527,7 +528,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: $"{nonce} rollup-probe workspace-b",
                 owner: MemoryOwner.ForWorkspace(workspaceB.Id),
-                cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
             );
 
             memoryInProjectB1 = await storage.StoreMemory(
@@ -538,7 +539,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 confidence: new Confidence(1.0),
                 title: $"{nonce} rollup-probe project-b1",
                 owner: MemoryOwner.ForProject(projectB1.Id),
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             var results = await storage.SearchWithMetadataEmbedding(
@@ -551,7 +552,7 @@ public class McpToolsProjectScopingTests : IDisposable
                 includeArchived: false,
                 includeSystem: false,
                 workspaceId: workspaceA.Id,
-                cancellationToken: default
+                cancellationToken: TestContext.Current.CancellationToken
             );
 
             var resultIds = results.Select(m => m.Id).ToHashSet();
@@ -564,17 +565,17 @@ public class McpToolsProjectScopingTests : IDisposable
         }
         finally
         {
-            if (memoryOnWorkspaceA != null) await storage.Delete(memoryOnWorkspaceA.Id, default);
-            if (memoryInProjectA1 != null) await storage.Delete(memoryInProjectA1.Id, default);
-            if (memoryInProjectA2 != null) await storage.Delete(memoryInProjectA2.Id, default);
-            if (memoryOnWorkspaceB != null) await storage.Delete(memoryOnWorkspaceB.Id, default);
-            if (memoryInProjectB1 != null) await storage.Delete(memoryInProjectB1.Id, default);
+            if (memoryOnWorkspaceA != null) await storage.Delete(memoryOnWorkspaceA.Id, TestContext.Current.CancellationToken);
+            if (memoryInProjectA1 != null) await storage.Delete(memoryInProjectA1.Id, TestContext.Current.CancellationToken);
+            if (memoryInProjectA2 != null) await storage.Delete(memoryInProjectA2.Id, TestContext.Current.CancellationToken);
+            if (memoryOnWorkspaceB != null) await storage.Delete(memoryOnWorkspaceB.Id, TestContext.Current.CancellationToken);
+            if (memoryInProjectB1 != null) await storage.Delete(memoryInProjectB1.Id, TestContext.Current.CancellationToken);
 
-            await storage.DeleteProjectAsync(projectA1.Id, default);
-            await storage.DeleteProjectAsync(projectA2.Id, default);
-            await storage.DeleteProjectAsync(projectB1.Id, default);
-            await storage.DeleteWorkspaceAsync(workspaceA.Id, default);
-            await storage.DeleteWorkspaceAsync(workspaceB.Id, default);
+            await storage.DeleteProjectAsync(projectA1.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteProjectAsync(projectA2.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteProjectAsync(projectB1.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspaceA.Id, TestContext.Current.CancellationToken);
+            await storage.DeleteWorkspaceAsync(workspaceB.Id, TestContext.Current.CancellationToken);
         }
     }
 
@@ -593,7 +594,7 @@ public class McpToolsProjectScopingTests : IDisposable
             includeArchived: false,
             includeSystem: false,
             workspaceId: WorkspaceId.New(),
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         ));
     }
 
@@ -612,7 +613,7 @@ public class McpToolsProjectScopingTests : IDisposable
             includeArchived: false,
             includeSystem: false,
             workspaceId: WorkspaceId.New(),
-            cancellationToken: default
+            cancellationToken: TestContext.Current.CancellationToken
         ));
     }
 

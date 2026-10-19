@@ -6,9 +6,8 @@ using Memorizer.Services;
 using Memorizer.Settings;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
-using PostgMem.Tools;
 using Pgvector;
-using System.Text.Json;
+using PostgMem.Tools;
 
 namespace Memorizer.UnitTests.Tools;
 
@@ -41,7 +40,8 @@ public class MemoryToolsCanonicalUrlTests
             type: "reference",
             text: "Test content",
             source: "LLM",
-            title: "Test Memory");
+            title: "Test Memory",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -69,7 +69,8 @@ public class MemoryToolsCanonicalUrlTests
             type: "reference",
             text: "Test content",
             source: "LLM",
-            title: "Test Memory");
+            title: "Test Memory",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(TestCanonicalUrl, result);
@@ -93,7 +94,8 @@ public class MemoryToolsCanonicalUrlTests
             text: "Test content",
             source: "LLM",
             title: "Test Memory",
-            workspaceId: workspaceId.ToString());
+            workspaceId: workspaceId.ToString(),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains($"Assigned to workspace {workspaceId}", result);
@@ -119,7 +121,8 @@ public class MemoryToolsCanonicalUrlTests
             source: "LLM",
             title: "Test Memory",
             projectId: "11111111-1111-1111-1111-111111111111",
-            workspaceId: "22222222-2222-2222-2222-222222222222");
+            workspaceId: "22222222-2222-2222-2222-222222222222",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("projectId and workspaceId are mutually exclusive", result);
@@ -142,7 +145,8 @@ public class MemoryToolsCanonicalUrlTests
             text: "Test content",
             source: "LLM",
             title: "Test Memory",
-            workspaceId: "not-a-guid");
+            workspaceId: "not-a-guid",
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("workspaceId must be a valid GUID", result);
@@ -169,7 +173,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.SearchMemories("test query");
+        var result = await tools.SearchMemories("test query", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -193,7 +197,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, new FakeCanonicalUrlService());
 
         // Act
-        await tools.SearchMemories("test query", workspaceId: workspaceId.ToString());
+        await tools.SearchMemories("test query", workspaceId: workspaceId.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(fakeStorage.HybridSearchCalled);
@@ -215,7 +219,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, new FakeCanonicalUrlService());
 
         // Act
-        var result = await tools.SearchMemories("test query", workspaceId: "not-a-guid");
+        var result = await tools.SearchMemories("test query", workspaceId: "not-a-guid", cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("workspaceId must be a valid GUID", result);
@@ -227,14 +231,13 @@ public class MemoryToolsCanonicalUrlTests
     {
         // Arrange
         var workspaceId = Guid.Parse("b775bb37-4af5-46fe-ad14-7f6fba7889aa");
+        var memory = CreateTestMemory(new MemoryId(Guid.Parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890")), "Memory 1");
+        memory.Similarity = new SimilarityScore(0.9);
         var fakeStorage = new FakeStorage
         {
-            SearchWithMetadataEmbeddingResults = new List<Memory>
-            {
-                CreateTestMemory(new MemoryId(Guid.Parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890")), "Memory 1")
-            }
+            HybridSearchResults = new List<Memory> { memory }
         };
-        var controller = new MemoryController(fakeStorage, new SimilaritySettings());
+        var controller = new MemoryController(fakeStorage, new SimilaritySettings(), new FakeTagCloudService());
 
         // Act
         var result = await controller.SearchMemories("test query", workspaceId: workspaceId);
@@ -243,9 +246,61 @@ public class MemoryToolsCanonicalUrlTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var items = Assert.IsType<List<MemoryListItem>>(ok.Value);
         Assert.Single(items);
-        Assert.True(fakeStorage.SearchWithMetadataEmbeddingCalled);
-        Assert.Null(fakeStorage.LastMetadataSearchProjectId);
-        Assert.Equal(workspaceId, fakeStorage.LastMetadataSearchWorkspaceId?.Value);
+        Assert.True(fakeStorage.HybridSearchCalled);
+        Assert.Null(fakeStorage.LastHybridSearchProjectId);
+        Assert.Equal(workspaceId, fakeStorage.LastHybridSearchWorkspaceId?.Value);
+    }
+
+    [Fact]
+    public async Task RestSearchMemories_HybridWithMinSimilarity_FiltersLowSimilarityResults()
+    {
+        // Arrange
+        var highSim = CreateTestMemory(new MemoryId(Guid.Parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890")), "High");
+        highSim.Similarity = new SimilarityScore(0.9);
+        var lowSim = CreateTestMemory(new MemoryId(Guid.Parse("b2c3d4e5-f6a7-8901-bcde-f12345678901")), "Low");
+        lowSim.Similarity = new SimilarityScore(0.5);
+        var noSim = CreateTestMemory(new MemoryId(Guid.Parse("c3d4e5f6-a7b8-901c-def1-23456789012a")), "No Score");
+
+        var fakeStorage = new FakeStorage
+        {
+            HybridSearchResults = new List<Memory> { highSim, lowSim, noSim }
+        };
+        var controller = new MemoryController(fakeStorage, new SimilaritySettings(), new FakeTagCloudService());
+
+        // Act - with a threshold, only results at/above it survive; no-score results are excluded
+        var result = await controller.SearchMemories("test query", minSimilarity: 0.7);
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var items = Assert.IsType<List<MemoryListItem>>(ok.Value);
+        var returned = Assert.Single(items);
+        Assert.Equal(highSim.Id.Value, returned.Id);
+    }
+
+    [Fact]
+    public async Task RestSearchMemories_HybridWithoutMinSimilarity_UsesDefaultThreshold()
+    {
+        // Arrange
+        var aboveDefault = CreateTestMemory(new MemoryId(Guid.Parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890")), "Above Default");
+        aboveDefault.Similarity = new SimilarityScore(0.4);
+        var belowDefault = CreateTestMemory(new MemoryId(Guid.Parse("b2c3d4e5-f6a7-8901-bcde-f12345678901")), "Below Default");
+        belowDefault.Similarity = new SimilarityScore(0.1);
+        var noSim = CreateTestMemory(new MemoryId(Guid.Parse("c3d4e5f6-a7b8-901c-def1-23456789012a")), "No Score");
+
+        var fakeStorage = new FakeStorage
+        {
+            HybridSearchResults = new List<Memory> { aboveDefault, belowDefault, noSim }
+        };
+        var controller = new MemoryController(fakeStorage, new SimilaritySettings(), new FakeTagCloudService());
+
+        // Act - the default threshold (0.25) filters out low/no-score noise
+        var result = await controller.SearchMemories("test query");
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var items = Assert.IsType<List<MemoryListItem>>(ok.Value);
+        var returned = Assert.Single(items);
+        Assert.Equal(aboveDefault.Id.Value, returned.Id);
     }
 
     [Fact]
@@ -260,7 +315,7 @@ public class MemoryToolsCanonicalUrlTests
                 CreateTestMemory(new MemoryId(Guid.Parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890")), "Memory 1")
             }
         };
-        var controller = new MemoryController(fakeStorage, new SimilaritySettings());
+        var controller = new MemoryController(fakeStorage, new SimilaritySettings(), new FakeTagCloudService());
 
         // Act
         var result = await controller.SearchWithMetadataEmbedding("test query", workspaceId: workspaceId);
@@ -279,7 +334,7 @@ public class MemoryToolsCanonicalUrlTests
     {
         // Arrange
         var fakeStorage = new FakeStorage();
-        var controller = new MemoryController(fakeStorage, new SimilaritySettings());
+        var controller = new MemoryController(fakeStorage, new SimilaritySettings(), new FakeTagCloudService());
 
         // Act
         var result = await controller.SearchMemories(
@@ -290,7 +345,7 @@ public class MemoryToolsCanonicalUrlTests
         // Assert
         var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
         Assert.Contains("mutually exclusive", Assert.IsType<string>(badRequest.Value));
-        Assert.False(fakeStorage.SearchWithMetadataEmbeddingCalled);
+        Assert.False(fakeStorage.HybridSearchCalled);
     }
 
     [Fact]
@@ -310,7 +365,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.Get(memoryId.Value.ToString(), includeSimilar: false);
+        var result = await tools.Get(memoryId.Value.ToString(), includeSimilar: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -339,7 +394,7 @@ public class MemoryToolsCanonicalUrlTests
         var tools = CreateTools(fakeStorage, fakeUrlService);
 
         // Act
-        var result = await tools.GetMany(memoryIds.Select(x => x.ToString()).ToArray());
+        var result = await tools.GetMany(memoryIds.Select(x => x.ToString()).ToArray(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(TestCanonicalUrl, result);
@@ -373,6 +428,23 @@ public class MemoryToolsCanonicalUrlTests
             Archetype = ArchetypeEnum.Document,
             CurrentVersion = new VersionNumber(1)
         };
+    }
+
+    /// <summary>
+    /// Minimal ITagCloudService stub for controller constructor tests.
+    /// </summary>
+    private class FakeTagCloudService : ITagCloudService
+    {
+        public Task<List<TagCount>> GetWorkspaceSubtreeTagCountsAsync(
+            WorkspaceId workspaceId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new List<TagCount>());
+
+        public Task<List<TagCount>> GetProjectTagCountsAsync(
+            ProjectId projectId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new List<TagCount>());
+
+        public Task<List<TagCount>> GetGlobalTagCountsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new List<TagCount>());
     }
 
     /// <summary>
@@ -417,11 +489,11 @@ public class MemoryToolsCanonicalUrlTests
         }
 
         // Stub implementations for remaining interface members - grouped by category
-        
+
         // Basic CRUD
         public Task<bool> Delete(MemoryId id, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
-        
+
         public Task<Memory?> UpdateMemory(MemoryId id, string type, string content, string source, string[]? tags, Confidence confidence, string? title, CancellationToken cancellationToken)
             => throw new NotImplementedException();
 

@@ -2,7 +2,6 @@ using Akka.Actor;
 using Akka.Event;
 using Akka.Streams;
 using Memorizer.Services;
-using Microsoft.Extensions.DependencyInjection;
 using Pgvector;
 
 namespace Memorizer.Actors;

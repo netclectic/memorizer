@@ -3,9 +3,7 @@ using System.Text;
 using ModelContextProtocol.Server;
 using Memorizer.Models;
 using Memorizer.Models.Enums;
-using Memorizer.Models.ValueTypes;
 using Memorizer.Services;
-using Microsoft.Extensions.Logging;
 
 namespace PostgMem.Tools;
 
